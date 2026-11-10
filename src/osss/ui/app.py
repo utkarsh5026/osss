@@ -43,11 +43,16 @@ def _panel(*children: W.Widget, gap: str = "8px") -> W.VBox:
     return box
 
 
+ROW_GAPS = (4, 6, 10, 14)  # extra px on top of the 2px margin every widget already has on each side
+
+
 def _row(*children: W.Widget, align: str = "center", wrap: bool = True, gap: str = "8px") -> W.HBox:
     lay = dict(align_items=align, flex_flow="row wrap" if wrap else "row nowrap")
-    if _supports_gap():
-        lay["gap"] = gap
-    return W.HBox(list(children), layout=W.Layout(**lay))
+    box = W.HBox(list(children), layout=W.Layout(**lay))
+    # ipywidgets' Layout has no ``gap`` trait (only ``grid_gap``), so spacing is applied with a CSS class.
+    extra = max(0, int(gap.rstrip("px")) - 4)
+    box.add_class(f"o-g{min(ROW_GAPS, key=lambda g: abs(g - extra))}")
+    return box
 
 
 def _supports_gap() -> bool:

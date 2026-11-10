@@ -132,10 +132,10 @@ cluster = osss.connect("https://localhost:9200", username="admin", password="…
 
 | Tab | What it does |
 | --- | --- |
-| 🔍 Search | Pick an index, then search with keyword, semantic or hybrid mode. Filter by file type, page through results, and expand any hit to see the full chunk. |
-| ＋ New index | **01** Choose a local folder or S3 prefix and scan it to preview files and types. **02** Configure the index. **03** Build it with live progress, a cancel button and a summary of what was skipped. |
-| 🗂 Indexes | See every index with its size and health. Inspect, add files, or delete. |
-| ⚙ Server | Start or stop the local OpenSearch and choose memory, port and backend, or connect to a remote cluster. |
+| Search | Pick an index, then search with keyword, semantic or hybrid mode. Filter by file type, page through results, and expand any hit to see the full chunk. |
+| New index | **01** Choose a local folder or S3 prefix and scan it to preview files and types. **02** Configure the index. **03** Build it with live progress, a cancel button and a summary of what was skipped. |
+| Indexes | See every index with its size and health. Inspect, add files, or delete. |
+| Server | Start or stop the local OpenSearch and choose memory, port and backend, or connect to a remote cluster. |
 
 <p align="center">
   <img src="docs/images/new-index.png" width="420" alt="New index wizard">

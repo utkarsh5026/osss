@@ -2,7 +2,7 @@
 
 ## Index options (`IndexConfig`)
 
-Pass these to `cluster.create_index(...)` as keyword arguments, build an `osss.IndexConfig`, or set them in the app's **＋ New index** tab.
+Pass these to `cluster.create_index(...)` as keyword arguments, build an `osss.IndexConfig`, or set them in the app's **New index** tab.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |

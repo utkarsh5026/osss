@@ -209,7 +209,9 @@ body[data-jp-theme-light="false"] .osss, .vscode-dark .osss, .vscode-high-contra
 .osss table.o-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .osss table.o-table tr:last-child td { border-bottom: 0; }
 .osss .o-health { display: inline-flex; align-items: center; gap: 8px; }
-.osss .o-files { margin: 12px 0 0; padding: 0; list-style: none; font-size: 12px; max-height: 260px; overflow: auto; }
+/* !important: JupyterLab's rendered-HTML rules (``.jp-RenderedHTMLCommon ul``) are more specific */
+.osss ul.o-files { margin: 12px 0 0 !important; padding: 0 !important; list-style: none !important; font-size: 12px; max-height: 260px; overflow: auto; }
+.osss ul.o-files li { margin: 0 !important; }
 .osss .o-files li { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-top: 1px solid var(--o-line); color: var(--o-fg2); }
 .osss .o-files li span:first-child { font-family: var(--o-mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .osss .o-files li span:last-child { color: var(--o-faint); flex: none; font-variant-numeric: tabular-nums; }
@@ -357,6 +359,10 @@ body[data-jp-theme-light="false"] .osss, .vscode-dark .osss, .vscode-high-contra
 .osss-app .o-panel-head { margin-bottom: 4px; }
 .osss-app .o-divider { border-top: 1px solid var(--o-line); margin: 10px 0 6px !important; }
 .osss-app .o-flat { padding: 0 !important; }
+.osss-app .o-g4 { gap: 4px; }
+.osss-app .o-g6 { gap: 6px; }
+.osss-app .o-g10 { gap: 10px; }
+.osss-app .o-g14 { gap: 14px; }
 .osss-app .o-stack { gap: 6px; }
 .osss-app .o-stack > .widget-html:first-child .widget-html-content { line-height: 1.2; }
 </style>
