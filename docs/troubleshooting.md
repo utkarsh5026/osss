@@ -32,7 +32,7 @@ Add `OSSS_DEBUG=1` to any CLI command for a full traceback. In the app, open **T
     ```
 
 ??? question "Something else is wrong with the server"
-    Look at the logs: `osss logs -n 200`, or **⚙ Server → Logs** in the app. As a last resort, reset everything (this deletes your indexes):
+    Look at the logs: `osss logs -n 200`, or **Server → Logs** in the app. As a last resort, reset everything (this deletes your indexes):
     ```python
     osss.LocalServer().uninstall()
     ```

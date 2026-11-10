@@ -100,7 +100,7 @@ cluster = osss.connect("https://opensearch.internal:9200", username="admin", pas
 cluster = osss.connect("https://localhost:9200", username="admin", password="…", verify_certs=False)
 ```
 
-Everything else (creating indexes, searching, the app) works the same. In the app, use **⚙ Server → Existing cluster**.
+Everything else (creating indexes, searching, the app) works the same. In the app, use **Server → Existing cluster**.
 
 !!! note "Semantic search on a remote cluster"
     Amazon OpenSearch Service and Serverless include k-NN. For self-managed clusters, install the `opensearch-knn` plugin.
@@ -115,7 +115,7 @@ print(osss.LocalServer().logs(100))
 osss logs -n 100
 ```
 
-In the app: **⚙ Server → Logs**.
+In the app: **Server → Logs**.
 
 <div class="next" markdown>
 [Command line →](cli.md){ .md-button .md-button--primary }

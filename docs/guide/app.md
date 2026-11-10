@@ -11,17 +11,17 @@ It has four tabs:
 
 | Tab | Use it to |
 | --- | --- |
-| **🔍 Search** | Query an index, filter results and page through them |
-| **＋ New index** | Point at a folder or S3 prefix, configure and build |
-| **🗂 Indexes** | See what's there, add files or delete indexes |
-| **⚙ Server** | Start or stop OpenSearch, or connect to an existing cluster |
+| **Search** | Query an index, filter results and page through them |
+| **New index** | Point at a folder or S3 prefix, configure and build |
+| **Indexes** | See what's there, add files or delete indexes |
+| **Server** | Start or stop OpenSearch, or connect to an existing cluster |
 
 The status in the top-right corner always shows what you're connected to.
 
 !!! tip "Light and dark"
     The app follows your JupyterLab theme automatically. SageMaker Studio's dark mode works too.
 
-## 🔍 Search
+## Search
 
 ![Search tab](../images/search.png){ .shot .shot-light }
 ![Search tab, dark theme](../images/search-dark.png){ .shot .shot-dark }
@@ -29,9 +29,9 @@ The status in the top-right corner always shows what you're connected to.
 1. **Pick an index** from the dropdown. Next to it you'll see how many files and chunks it holds, and whether it supports semantic search.
 2. **Type a query** and press ++enter++, or click **Search**.
 3. **Refine** with the controls below the search box:
-    - **Keyword / Semantic / Hybrid** chooses how results are found. Semantic and hybrid appear only for indexes built with embeddings ([learn more](semantic.md)).
+    - **Keyword / Semantic / Hybrid** chooses how results are found. This switch appears only for indexes built with embeddings ([learn more](semantic.md)); other indexes always use keyword search.
     - **All file types** limits results to PDFs only, CSV rows only, and so on.
-    - **10 / page** sets how many results to show at a time.
+    - **10 per page** sets how many results to show at a time.
     - **Typo tolerance** still finds `refnud` when you meant `refund`.
     - **Match all words** requires every word instead of any of them.
 
@@ -51,17 +51,17 @@ With an empty search box, the tab shows an overview of the index and the first c
 !!! tip "Query syntax"
     `"exact phrase"`, `-exclude`, `prefix*` and `this | that` all work. See [Searching](searching.md#query-syntax).
 
-## ＋ New index
+## New index
 
 Building an index takes three steps, top to bottom.
 
 ### 01 · Choose your data
 
-Choose **📁 Local folder** or **☁️ Amazon S3**, enter the path, and click **Scan**.
+Choose **Local folder** or **Amazon S3**, enter the path, and click **Scan**.
 
 ![Choosing an S3 prefix](../images/source-s3.png){ .shot }
 
-The scan counts files, total size and file types, lists a sample of files, and warns about any types osss can't read. Nothing is indexed yet.
+While it runs, a live counter shows how many files have been found so far, which helps on large S3 prefixes. The result counts files, total size and file types, lists a sample of files, and warns about any types osss can't read (they're shown struck through and marked *skipped*). Nothing is indexed yet.
 
 ![Scan results](../images/source-scan.png){ .shot }
 
@@ -87,31 +87,32 @@ The scan counts files, total size and file types, lists a sample of files, and w
 
 ### 03 · Build
 
-Click **Build index**. You'll see a live progress bar, counters for files, chunks, errors and elapsed time, and the most recent files processed. **Cancel** stops cleanly at any point.
+Click **Build index**. The button changes to *Building…* and you'll see a live progress bar, counters for files, chunks, errors and elapsed time, and the most recent files processed. **Cancel** stops cleanly at any point. If something needs fixing first (no server running, the name is taken, no file types selected), the message appears right under the button.
 
 When it finishes, a summary lists what was indexed, and any skipped or failed files with the reason. **Search this index** takes you straight to the results.
 
 ![Build finished](../images/build-step.png){ .shot }
 
-## 🗂 Indexes
+## Indexes
 
 ![Indexes tab](../images/indexes.png){ .shot }
 
 - The table shows every index with its chunk count, size on disk and health.
 - **Open in Search** jumps to the Search tab with that index selected.
-- **Details** shows the index's settings, file types and a few sample documents.
+- **Show details** shows the index's settings, file types and a few sample documents.
 - **Add files** indexes another folder or S3 prefix into the same index, using its original settings. Files that were indexed before are **replaced, not duplicated**, so re-running it after your documents change is safe.
-- **Delete** asks you to click twice, so nothing is removed by accident.
+- **Delete** turns red and asks you to click again to confirm, so nothing is removed by accident.
 
-## ⚙ Server
+## Server
 
 ![Server tab](../images/server.png){ .shot }
 
 **Local OpenSearch** controls the server on this machine:
 
 - **Include k-NN plugin** turns on support for semantic and hybrid search. It's a one-time download of about 1 GB.
-- **Memory** is the Java heap. `1g` fits on small instances; use `2g`–`4g` for millions of chunks.
-- **Backend** is `Auto` (Docker when available, otherwise the self-contained tarball), or you can force one.
+- **Memory** is the Java heap. 1 GB fits on small instances; use 2–4 GB for millions of chunks.
+- **Backend** is *Auto* (Docker when available, otherwise the self-contained tarball), or you can force one.
+- Memory, port and backend apply when the server starts, so they're locked while it's running. Stop it to change them.
 - **Logs** shows the server log if something goes wrong.
 
 **Existing cluster** connects to Amazon OpenSearch Service, OpenSearch Serverless or any self-managed cluster. With *Auto* auth, `*.amazonaws.com` endpoints are signed with your AWS credentials (in SageMaker, the execution role).

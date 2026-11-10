@@ -12,7 +12,7 @@ idx = cluster.create_index(
 idx.last_report                      # what was indexed, skipped or failed
 ```
 
-From the app, this is the [＋ New index](app.md#new-index) tab. From the terminal, it's `osss index`.
+From the app, this is the [New index](app.md#new-index) tab. From the terminal, it's `osss index`.
 
 ## The build report
 
@@ -82,7 +82,7 @@ idx.add("s3://bucket/handbook/2025/")
 idx.add("./handbook")             # re-run after editing files
 ```
 
-`add` uses the index's original settings. Chunks from a file that was indexed before are **replaced**, not duplicated, so `add` is safe to run on a schedule. From the app, use **🗂 Indexes → Add files**. From the terminal: `osss index ./handbook --name handbook --add`.
+`add` uses the index's original settings. Chunks from a file that was indexed before are **replaced**, not duplicated, so `add` is safe to run on a schedule. From the app, use **Indexes → Add files**. From the terminal: `osss index ./handbook --name handbook --add`.
 
 To rebuild from scratch:
 
