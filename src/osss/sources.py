@@ -104,10 +104,18 @@ class Source:
     def iter_files(self, include: Sequence[str] = (), exclude: Sequence[str] = ()) -> Iterator[SourceFile]:
         raise NotImplementedError
 
-    def scan(self, include: Sequence[str] = (), exclude: Sequence[str] = (), limit: Optional[int] = None) -> ScanSummary:
+    def scan(
+        self, include: Sequence[str] = (), exclude: Sequence[str] = (), limit: Optional[int] = None,
+        on_progress: Optional[Callable[[int, int], None]] = None,
+    ) -> ScanSummary:
+        """List matching files. ``on_progress(files_found, bytes_found)`` is called for every file."""
         files: List[SourceFile] = []
+        total = 0
         for f in self.iter_files(include, exclude):
             files.append(f)
+            total += f.size
+            if on_progress is not None:
+                on_progress(len(files), total)
             if limit and len(files) >= limit:
                 break
         return ScanSummary(
