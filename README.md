@@ -69,6 +69,8 @@ idx.search("parental leave", metadata={"department": "hr", "year": {"gte": 2023}
 res[0].metadata            # {"department": "hr", "year": 2024, ...}
 ```
 
+Step-by-step guide: [Metadata & filtering](https://utkarsh5026.github.io/osss/guide/metadata/).
+
 Add new or changed files later. Re-indexing a file replaces its old chunks, so this is safe to re-run:
 
 ```python

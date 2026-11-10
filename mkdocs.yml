@@ -101,6 +101,7 @@ nav:
       - Folders & S3: guide/sources.md
       - Building an index: guide/indexing.md
       - Searching: guide/searching.md
+      - Metadata & filtering: guide/metadata.md
       - Semantic & hybrid search: guide/semantic.md
       - Running OpenSearch: guide/server.md
       - Command line: guide/cli.md

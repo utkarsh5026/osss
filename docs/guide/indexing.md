@@ -84,86 +84,20 @@ cluster.create_index("handbook", "s3://bucket/handbook/", recreate=True)
 
 ## Custom metadata
 
-You can tag every chunk of a file with your own attributes, such as team, year, confidentiality or product line, and filter on them when you search. This works like [metadata in Amazon Bedrock Knowledge Bases](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-metadata.html), and the sidecar files are compatible, so a bucket prepared for Bedrock works as is.
-
-### Sidecar files
-
-Next to a file, put a JSON file with the same name plus `.metadata.json`:
-
-```text
-s3://bucket/handbook/
-├── leave-policy.pdf
-├── leave-policy.pdf.metadata.json
-├── expenses.docx
-└── expenses.docx.metadata.json
-```
+Tag files with your own attributes (department, year, tags…) and filter on them when you search. Either put a Bedrock-style sidecar next to a file:
 
 ```json title="leave-policy.pdf.metadata.json"
-{
-  "metadataAttributes": {
-    "department": "hr",
-    "year": 2024,
-    "confidential": false,
-    "tags": ["leave", "benefits"]
-  }
-}
+{"metadataAttributes": {"department": "hr", "year": 2024}}
 ```
 
-Bedrock's typed form works too:
-
-```json
-{
-  "metadataAttributes": {
-    "year": {"value": {"type": "NUMBER", "numberValue": 2024}, "includeForEmbedding": true}
-  }
-}
-```
-
-The types are `STRING`, `NUMBER`, `BOOLEAN` and `STRING_LIST`. A plain object without the `metadataAttributes` wrapper is accepted as well.
-
-Sidecars work in local folders and in S3. They are found even when `include=["*.pdf"]` would filter them out, and they are never indexed as documents of their own. To ignore them, pass `metadata_files=False`. A sidecar with invalid JSON marks its file as **failed** in the build report, and the other files are still indexed.
-
-!!! note
-    `includeForEmbedding` is read but has no effect: metadata is stored next to each chunk and isn't mixed into the text or its embedding.
-
-### From Python
-
-Pass `metadata=` to `create_index` or `add`. Use a dict for the same values on every file:
+or pass `metadata=` (a dict, or a function of each file):
 
 ```python
-idx = cluster.create_index("handbook", "s3://bucket/handbook/", metadata={"source_system": "sharepoint"})
-idx.add("s3://bucket/handbook-2025/", metadata={"year": 2025})
+cluster.create_index("handbook", "s3://bucket/handbook/", metadata=lambda f: {"team": f.folder})
+idx.search("parental leave", metadata={"department": "hr"})
 ```
 
-Or use a function that receives each file (`name`, `path`, `folder`, `ext`, `size`, `modified`, `uri`) and returns a dict:
-
-```python
-def tag(f):
-    team, *_ = f.rel_path.split("/")          # "hr/leave-policy.pdf" → "hr"
-    return {"team": team, "year": f.modified.year}
-
-cluster.create_index("handbook", "s3://bucket/handbook/", metadata=tag)
-```
-
-When both are given, the sidecar wins on keys they share. Every chunk of the file gets the merged result under `metadata.<key>`.
-
-Values can be strings, numbers, booleans, dates/datetimes (stored as ISO strings) or lists of those.
-
-### Changing metadata
-
-Metadata is stored on the chunks, so to change it, edit the sidecar (or the `metadata=` you pass) and re-add the file. Its chunks are replaced:
-
-```python
-idx.add("s3://bucket/handbook/leave-policy.pdf")
-```
-
-From the terminal:
-
-```bash
-osss index s3://bucket/handbook/ --meta department=hr --meta year=2024
-```
-
-See [Filters](searching.md#filters) for searching by metadata.
+Every chunk of the file gets the metadata. The [Metadata & filtering guide](metadata.md) covers it step by step: the sidecar format, generating sidecars in bulk, filters, updates and migrating from Bedrock.
 
 ## Performance
 

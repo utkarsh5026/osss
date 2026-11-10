@@ -61,7 +61,7 @@ idx.search("",       filters={"modified": {"gte": "2025-01-01"}})       # recent
 | `page`, `record`, `chunk` | PDF page, CSV/JSON row (from 0), chunk number |
 | `modified`, `indexed_at`, `size` | File timestamps and size in bytes |
 | `fields.<column>` | Any column from CSV, JSON or Parquet records |
-| `metadata.<key>` | Your [custom metadata](indexing.md#custom-metadata) (sidecar files or `metadata=`) |
+| `metadata.<key>` | Your [custom metadata](metadata.md) (sidecar files or `metadata=`) |
 
 A list means "any of these": `{"file_type": ["pdf", "docx"]}`. A dict with `gte`, `gt`, `lte` or `lt` means a range.
 
@@ -78,7 +78,7 @@ idx.search("", metadata={"confidential": False})
 
 It's the same as `filters={"metadata.department": "hr", ...}`, and the two can be combined. String values match exactly (case-sensitive). Like CSV/JSON fields, strings that look like numbers or dates are stored as numbers or dates, so filter those with numbers (`{"year": 2024}`) or ranges (`{"published": {"gte": "2024-01-01"}}`).
 
-Metadata filters work the same way in keyword, semantic and hybrid search.
+Metadata filters work the same way in keyword, semantic and hybrid search. More examples, value types and Bedrock filter equivalents are in [Metadata & filtering](metadata.md#4-search-with-filters).
 
 !!! tip "Browse without a query"
     `idx.search("")` (or `idx.sample()`) lists documents. With filters, it returns everything that matches them, for example every camping product under $100.
@@ -151,5 +151,5 @@ cluster.client.search(index="handbook", body={"query": {"match": {"title": "refu
 ```
 
 <div class="next" markdown>
-[Semantic & hybrid search →](semantic.md){ .md-button .md-button--primary }
+[Metadata & filtering →](metadata.md){ .md-button .md-button--primary }
 </div>

@@ -48,7 +48,7 @@ Index a folder, file or `s3://` prefix. Starts OpenSearch first if it isn't runn
 | `--analyzer english` | Language analyzer |
 | `--semantic` / `--model ID` | Add embeddings |
 | `--text-fields a,b` / `--title-field` / `--id-field` | CSV/JSON columns |
-| `--meta KEY=VALUE` | [Metadata](indexing.md#custom-metadata) for every chunk; repeatable. Values are parsed as JSON when possible (`year=2024`, `ok=true`), and `a,b` becomes a list. |
+| `--meta KEY=VALUE` | [Metadata](metadata.md) for every chunk; repeatable. Values are parsed as JSON when possible (`year=2024`, `ok=true`), and `a,b` becomes a list. |
 | `--no-metadata-files` | Ignore `<file>.metadata.json` sidecars |
 | `--recreate` | Replace the index if it exists |
 | `--add` | Add to an existing index (re-indexed files are replaced) |

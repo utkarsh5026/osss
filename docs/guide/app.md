@@ -41,6 +41,7 @@ Each result shows:
 - the **file type and path**, plus the **page** (PDF) or **row** (CSV/JSON) it came from;
 - a **snippet** with your search terms highlighted;
 - for CSV, JSON and Parquet, the record's **fields**;
+- any [custom **metadata**](metadata.md) attached to the file;
 - **Show full text**, which expands the complete chunk.
 
 With an empty search box, the tab shows an overview of the index and the first chunk of every file. It's a quick way to see what's inside.
@@ -77,6 +78,8 @@ The scan counts files, total size and file types, lists a sample of files, and w
 | **Overlap** | Characters shared between neighbouring chunks | ~15% of the chunk size |
 | **Analyzer** | How text is split into words | `English` handles plurals and tenses for English text |
 | **Replace the index** | Rebuild from scratch if the name already exists | |
+
+`<file>.metadata.json` sidecar files in the folder or bucket are read automatically, so their [metadata](metadata.md) is attached to every chunk. To filter on metadata, use `idx.search(..., metadata={...})` in a cell; the app has no metadata filter yet.
 
 **Advanced options** include include/exclude patterns, which **CSV/JSON/Parquet columns** to search or use as the title or ID, the maximum file size, parallel reads, and shards/replicas. All of them are explained in [Building an index](indexing.md).
 

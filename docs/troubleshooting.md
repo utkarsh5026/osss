@@ -65,6 +65,9 @@ Add `OSSS_DEBUG=1` to any CLI command for a full traceback. In the app, open **T
     - Try `fuzzy=True` for typos, or `mode="semantic"` for different wording.
     - With **Match all words** (`operator="and"`), every word must appear.
 
+??? question "A metadata filter returns nothing, or hits have no metadata"
+    String values are case-sensitive, numbers must be filtered as numbers (`2024`, not `"2024"`), and a sidecar must be named after the full file name (`report.pdf.metadata.json`). See [Metadata & filtering → Troubleshooting](guide/metadata.md#troubleshooting).
+
 ??? question "Semantic / Hybrid isn't offered"
     The index was built without embeddings. Rebuild it with `semantic=True`; see [Semantic & hybrid search](guide/semantic.md).
 

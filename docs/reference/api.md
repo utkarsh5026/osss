@@ -33,7 +33,7 @@ cluster = osss.start()
 
 | Member | |
 | --- | --- |
-| `create_index(name=None, source=None, *, config=None, recreate=False, embedder=None, metadata=None, progress=True, **options)` | Create an index and fill it from `source`. `options` are any [IndexConfig fields](configuration.md). `metadata` is a dict or `fn(SourceFile) -> dict` attached to every chunk ([custom metadata](../guide/indexing.md#custom-metadata)). Returns an `Index`. |
+| `create_index(name=None, source=None, *, config=None, recreate=False, embedder=None, metadata=None, progress=True, **options)` | Create an index and fill it from `source`. `options` are any [IndexConfig fields](configuration.md). `metadata` is a dict or `fn(SourceFile) -> dict` attached to every chunk ([custom metadata](../guide/metadata.md)). Returns an `Index`. |
 | `index(name)` / `cluster[name]` | Open an existing index |
 | `indexes()` | List of `{name, docs, size_bytes, health, status}` |
 | `index_names()` | List of names |
