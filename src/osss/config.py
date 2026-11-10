@@ -64,6 +64,8 @@ class IndexConfig:
         text_fields: For CSV/JSON/Parquet: columns to search. ``None`` = all text columns.
         title_field: For CSV/JSON/Parquet: column used as the result title.
         id_field: For CSV/JSON/Parquet: column used as a stable document id.
+        metadata_files: Read ``<file>.metadata.json`` sidecars (the Amazon Bedrock
+            Knowledge Base format) and attach their attributes to every chunk.
         max_file_mb: Skip files larger than this.
         shards / replicas: OpenSearch index settings.
         batch_size: Documents per bulk request.
@@ -83,6 +85,7 @@ class IndexConfig:
     text_fields: Optional[List[str]] = None
     title_field: Optional[str] = None
     id_field: Optional[str] = None
+    metadata_files: bool = True
     max_file_mb: float = 100.0
     shards: int = 1
     replicas: int = 0

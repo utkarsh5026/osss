@@ -33,7 +33,7 @@ cluster = osss.start()
 
 | Member | |
 | --- | --- |
-| `create_index(name=None, source=None, *, config=None, recreate=False, embedder=None, progress=True, **options)` | Create an index and fill it from `source`. `options` are any [IndexConfig fields](configuration.md). Returns an `Index`. |
+| `create_index(name=None, source=None, *, config=None, recreate=False, embedder=None, metadata=None, progress=True, **options)` | Create an index and fill it from `source`. `options` are any [IndexConfig fields](configuration.md). `metadata` is a dict or `fn(SourceFile) -> dict` attached to every chunk ([custom metadata](../guide/indexing.md#custom-metadata)). Returns an `Index`. |
 | `index(name)` / `cluster[name]` | Open an existing index |
 | `indexes()` | List of `{name, docs, size_bytes, health, status}` |
 | `index_names()` | List of names |
@@ -54,8 +54,8 @@ idx = cluster.index("docs")
 
 | Member | |
 | --- | --- |
-| `search(query="", *, mode=None, k=10, offset=0, filters=None, file_type=None, fuzzy=False, operator="or")` | → `SearchResults`. See [Searching](../guide/searching.md). `idx(query)` is the same. |
-| `add(source, **overrides)` | Index more files; previously indexed files are replaced → `IngestReport` |
+| `search(query="", *, mode=None, k=10, offset=0, filters=None, file_type=None, metadata=None, fuzzy=False, operator="or")` | → `SearchResults`. See [Searching](../guide/searching.md). `idx(query)` is the same. |
+| `add(source, *, metadata=None, **overrides)` | Index more files; previously indexed files are replaced → `IngestReport` |
 | `sample(n=5)` | A few documents |
 | `get(doc_id)` | One chunk's stored fields |
 | `count()` | Number of chunks |
@@ -80,7 +80,7 @@ idx = cluster.index("docs")
 | `title`, `content`, `snippet` | Snippet is HTML with `<mark>` around matches |
 | `path`, `source`, `file_name`, `file_type` | Where it came from |
 | `page`, `record`, `chunk` | PDF page, CSV/JSON row, chunk number |
-| `score`, `fields`, `id` | `fields` holds CSV/JSON/Parquet columns |
+| `score`, `fields`, `metadata`, `id` | `fields` holds CSV/JSON/Parquet columns; `metadata` your custom metadata |
 
 ## `IngestReport`
 

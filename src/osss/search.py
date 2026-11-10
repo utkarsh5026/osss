@@ -30,6 +30,7 @@ class Hit:
     record: Optional[int] = None
     chunk: Optional[int] = None
     fields: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -45,7 +46,8 @@ class Hit:
         return {
             "id": self.id, "score": self.score, "title": self.title, "content": self.content,
             "source": self.source, "path": self.path, "file_type": self.file_type,
-            "page": self.page, "record": self.record, "chunk": self.chunk, **{f"fields.{k}": v for k, v in self.fields.items()},
+            "page": self.page, "record": self.record, "chunk": self.chunk, **{f"metadata.{k}": v for k, v in self.metadata.items()},
+            **{f"fields.{k}": v for k, v in self.fields.items()},
         }
 
 
@@ -126,7 +128,12 @@ class SearchResults:
 
 # ---------------------------------------------------------------- query parts
 def build_filters(filters: Optional[Dict[str, FilterValue]]) -> List[Dict[str, Any]]:
-    """``{"file_type": ["pdf", "md"], "fields.year": {"gte": 2020}}`` → DSL clauses."""
+    """``{"file_type": ["pdf", "md"], "fields.year": {"gte": 2020}}`` → DSL clauses.
+
+    String values on dynamic fields (``fields.*`` and ``metadata.*``) match the
+    exact value via their ``.keyword`` sub-field. On a list-valued attribute a
+    value matches when the list contains it.
+    """
     out: List[Dict[str, Any]] = []
     for key, value in (filters or {}).items():
         if value is None or value == [] or value == "":
@@ -136,7 +143,8 @@ def build_filters(filters: Optional[Dict[str, FilterValue]]) -> List[Dict[str, A
             continue
         values = list(value) if isinstance(value, (list, tuple, set)) else [value]
         field_name = key
-        if key.startswith("fields.") and not key.endswith(".keyword") and all(isinstance(v, str) for v in values):
+        if (key.startswith(("fields.", "metadata.")) and not key.endswith(".keyword")
+                and all(isinstance(v, str) for v in values)):
             field_name = key + ".keyword"
         out.append({"terms": {field_name: values}})
     return out
@@ -186,7 +194,7 @@ def _to_hit(h: Dict[str, Any], score: Optional[float] = None) -> Hit:
         title=str(title), snippet=snippet, content=content, source=s.get("source", ""),
         path=s.get("path", ""), file_name=s.get("file_name", ""), file_type=s.get("file_type", ""),
         page=s.get("page"), record=s.get("record"), chunk=s.get("chunk"), fields=s.get("fields") or {},
-        raw=h,
+        metadata=s.get("metadata") or {}, raw=h,
     )
 
 

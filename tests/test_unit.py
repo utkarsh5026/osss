@@ -240,3 +240,122 @@ def test_hybrid_rrf_merges():
     assert len(r) == 2 and r.total == 3 and r[0].id == "0"
     with pytest.raises(ValueError):
         run_search(c, "i", "q", mode="semantic")
+
+
+# ------------------------------------------------------------------ custom metadata
+from osss.metadata import MetadataError, normalize, parse_sidecar  # noqa: E402
+from osss.metadata import resolve as resolve_metadata  # noqa: E402
+
+
+def test_parse_bedrock_sidecar_plain_and_typed():
+    plain = {"metadataAttributes": {"team": "finance", "year": 2024, "tags": ["q3", "audit"], "public": False}}
+    assert parse_sidecar(json.dumps(plain).encode()) == plain["metadataAttributes"]
+    typed = {"metadataAttributes": {
+        "team": {"value": {"type": "STRING", "stringValue": "hr"}, "includeForEmbedding": True},
+        "year": {"value": {"type": "NUMBER", "numberValue": 2023}},
+        "ok": {"value": {"type": "BOOLEAN", "booleanValue": True}},
+        "tags": {"value": {"type": "STRING_LIST", "stringListValue": ["a", "b"]}},
+    }}
+    assert parse_sidecar(json.dumps(typed)) == {"team": "hr", "year": 2023, "ok": True, "tags": ["a", "b"]}
+    assert parse_sidecar(b'\xef\xbb\xbf{"team": "ops"}') == {"team": "ops"}  # flat object, BOM
+    for bad in (b"not json", b"[1, 2]", b'{"metadataAttributes": 3}',
+                b'{"x": {"value": {"type": "BLOB", "blobValue": 1}}}', b'{"x": [[1]]}'):
+        with pytest.raises(MetadataError):
+            parse_sidecar(bad)
+
+
+def test_normalize_metadata():
+    d = datetime(2024, 5, 1, tzinfo=timezone.utc)
+    assert normalize({"when": d, "skip": None, "n": 1.5}) == {"when": d.isoformat(), "n": 1.5}
+    with pytest.raises(MetadataError):
+        normalize({"obj": object()})
+    with pytest.raises(MetadataError):
+        normalize({"": 1})
+
+
+def test_local_sidecars_are_attached_not_indexed(tmp_path):
+    (tmp_path / "a.md").write_text("# A")
+    (tmp_path / "a.md.metadata.json").write_text(json.dumps({"metadataAttributes": {"team": "hr", "year": 2024}}))
+    (tmp_path / "b.md").write_text("# B")
+    files = {f.rel_path: f for f in LocalSource(tmp_path).iter_files()}
+    assert sorted(files) == ["a.md", "b.md"]  # the sidecar is not a document of its own
+    assert files["b.md"].read_sidecar() is None
+    # sidecar wins over metadata=, which can be a dict or a function of the file
+    assert resolve_metadata(files["a.md"], {"team": "x", "src": "wiki"}) == {"team": "hr", "year": 2024, "src": "wiki"}
+    assert resolve_metadata(files["b.md"], lambda f: {"name": f.name}) == {"name": "b.md"}
+    assert resolve_metadata(files["a.md"], sidecars=False) == {}
+    # pointing at a single file still finds its sidecar
+    [single] = LocalSource(tmp_path / "a.md").iter_files()
+    assert resolve_metadata(single) == {"team": "hr", "year": 2024}
+
+
+def test_s3_sidecars_with_moto():
+    moto = pytest.importorskip("moto")
+    import boto3
+
+    with moto.mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket="kb-bucket")
+        s3.put_object(Bucket="kb-bucket", Key="kb/a.pdf", Body=b"x")
+        s3.put_object(Bucket="kb-bucket", Key="kb/a.pdf.metadata.json", Body=b'{"metadataAttributes": {"team": "legal"}}')
+        s3.put_object(Bucket="kb-bucket", Key="kb/b.pdf", Body=b"y")
+        files = {f.rel_path: f for f in S3Source("s3://kb-bucket/kb/", client=s3).iter_files(include=["*.pdf"])}
+        assert sorted(files) == ["a.pdf", "b.pdf"]
+        assert resolve_metadata(files["a.pdf"]) == {"team": "legal"}
+        assert files["b.pdf"].read_sidecar() is None
+        [single] = S3Source("s3://kb-bucket/kb/a.pdf", client=s3).iter_files()
+        assert resolve_metadata(single) == {"team": "legal"}
+        [lone] = S3Source("s3://kb-bucket/kb/b.pdf", client=s3).iter_files()
+        assert lone.read_sidecar() is None
+
+
+def test_metadata_on_every_chunk_and_filters():
+    [d] = load(sf("a.md", b"# T\n" + b"word " * 500), CFG)
+    acts = _make_actions("t", sf("a.md", b""), [d], IndexConfig(name="t", chunk_size=300, chunk_overlap=50), {"team": "hr"})
+    assert len(acts) > 3 and all(a["_source"]["metadata"] == {"team": "hr"} for a in acts)
+    assert "metadata" not in _make_actions("t", sf("a.md", b""), [d], CFG)[0]["_source"]
+    assert build_index_body(CFG)["mappings"]["properties"]["metadata"]["type"] == "object"
+    f = build_filters({"metadata.team": "hr", "metadata.year": {"gte": 2024}, "metadata.public": True})
+    assert {"terms": {"metadata.team.keyword": ["hr"]}} in f
+    assert {"range": {"metadata.year": {"gte": 2024}}} in f
+    assert {"terms": {"metadata.public": [True]}} in f
+
+
+def test_ingest_attaches_metadata(tmp_path, monkeypatch):
+    from opensearchpy import helpers
+
+    from osss.indexer import ingest
+
+    (tmp_path / "a.md").write_text("# A\nalpha")
+    (tmp_path / "a.md.metadata.json").write_text('{"metadataAttributes": {"team": "hr"}}')
+    (tmp_path / "b.md").write_text("# B\nbeta")
+    (tmp_path / "bad.md").write_text("# Bad")
+    (tmp_path / "bad.md.metadata.json").write_text("{oops")
+    written = []
+    monkeypatch.setattr(helpers, "bulk", lambda client, actions, **kw: (written.extend(actions) or (len(actions), [])))
+
+    class C:
+        class indices:
+            put_settings = refresh = staticmethod(lambda **kw: None)
+
+    report = ingest(C(), IndexConfig(name="t"), LocalSource(tmp_path), metadata={"src": "wiki"}, progress=False)
+    by_path = {a["_source"]["path"]: a["_source"].get("metadata") for a in written}
+    assert by_path == {"a.md": {"src": "wiki", "team": "hr"}, "b.md": {"src": "wiki"}}
+    assert report.files_indexed == 2 and len(report.failed) == 1 and "bad.md.metadata.json" in report.failed[0][1]
+
+
+def test_hit_exposes_metadata():
+    h = _hit(0)
+    h["_source"]["metadata"] = {"team": "hr"}
+    r = run_search(FakeClient([h]), "i", "q", mode="keyword", filters={"metadata.team": "hr"})
+    assert r[0].metadata == {"team": "hr"} and r.to_list()[0]["metadata.team"] == "hr"
+    assert "team" in r._repr_html_()
+
+
+def test_cli_meta_parsing():
+    from osss.cli import _parse_meta
+
+    assert _parse_meta(["team=hr", "year=2024", "tags=a, b", "ok=true", 'name="x=y"']) == {
+        "team": "hr", "year": 2024, "tags": ["a", "b"], "ok": True, "name": "x=y"}
+    with pytest.raises(SystemExit):
+        _parse_meta(["nokey"])

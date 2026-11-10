@@ -120,6 +120,21 @@ def cmd_scan(args) -> None:
     console.print(t)
 
 
+def _parse_meta(pairs: Optional[List[str]]) -> dict:
+    """``["team=hr", "year=2024", "tags=a,b"]`` → ``{"team": "hr", "year": 2024, "tags": ["a", "b"]}``."""
+    out: dict = {}
+    for pair in pairs or []:
+        key, sep, raw = pair.partition("=")
+        if not sep or not key.strip():
+            raise SystemExit(f"--meta expects KEY=VALUE, got {pair!r}")
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            value = [v.strip() for v in raw.split(",")] if "," in raw else raw
+        out[key.strip()] = value
+    return out
+
+
 def cmd_index(args) -> None:
     from .api import default_index_name
 
@@ -143,10 +158,13 @@ def cmd_index(args) -> None:
         opts["title_field"] = args.title_field
     if args.id_field:
         opts["id_field"] = args.id_field
+    if args.no_metadata_files:
+        opts["metadata_files"] = False
+    meta = _parse_meta(args.meta) or None
     if args.add and c.exists(name):
-        report = c.index(name).add(args.source)
+        report = c.index(name).add(args.source, metadata=meta)
     else:
-        idx = c.create_index(name, args.source, recreate=args.recreate, **opts)
+        idx = c.create_index(name, args.source, recreate=args.recreate, metadata=meta, **opts)
         report = idx.last_report
     console.print(report)
     console.print(f"\nSearch it:  [bold]osss search {name} \"your query\"[/]")
@@ -155,7 +173,8 @@ def cmd_index(args) -> None:
 def cmd_search(args) -> None:
     c = _cluster(args)
     idx = c.index(args.index)
-    res = idx.search(args.query, mode=args.mode, k=args.k, file_type=args.type, fuzzy=args.fuzzy)
+    res = idx.search(args.query, mode=args.mode, k=args.k, file_type=args.type, fuzzy=args.fuzzy,
+                     metadata=_parse_meta(args.meta) or None)
     if args.json:
         print(json.dumps(res.to_list(), indent=2, default=str))
     else:
@@ -262,6 +281,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--text-fields", help="CSV/JSON columns to search")
     sp.add_argument("--title-field")
     sp.add_argument("--id-field")
+    sp.add_argument("--meta", action="append", metavar="KEY=VALUE",
+                    help="metadata attached to every chunk (repeatable), e.g. --meta team=hr --meta year=2024")
+    sp.add_argument("--no-metadata-files", action="store_true",
+                    help="ignore <file>.metadata.json sidecar files")
     sp.add_argument("--recreate", action="store_true", help="replace the index if it exists")
     sp.add_argument("--add", action="store_true", help="add to an existing index instead of failing")
     sp.add_argument("--url")
@@ -273,6 +296,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-k", type=int, default=10)
     sp.add_argument("--type", help="only this file type")
     sp.add_argument("--fuzzy", action="store_true")
+    sp.add_argument("--meta", action="append", metavar="KEY=VALUE",
+                    help="only chunks with this metadata (repeatable), e.g. --meta team=hr")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     sp.add_argument("--url")
 

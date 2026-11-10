@@ -8,9 +8,18 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Union
 
 from ._utils import human_bytes
+
+#: Suffix of a sidecar metadata file (Amazon Bedrock Knowledge Base convention):
+#: ``report.pdf`` is described by ``report.pdf.metadata.json``.
+SIDECAR_SUFFIX = ".metadata.json"
+
+
+def is_sidecar(name: str) -> bool:
+    """True for ``*.metadata.json`` files: they describe another file and are not indexed themselves."""
+    return name.lower().endswith(SIDECAR_SUFFIX)
 
 
 @dataclass
@@ -22,6 +31,7 @@ class SourceFile:
     size: int
     modified: Optional[datetime]
     _reader: Callable[[], bytes] = field(repr=False)
+    _sidecar_reader: Optional[Callable[[], Optional[bytes]]] = field(default=None, repr=False)
 
     @property
     def name(self) -> str:
@@ -41,6 +51,10 @@ class SourceFile:
 
     def read(self) -> bytes:
         return self._reader()
+
+    def read_sidecar(self) -> Optional[bytes]:
+        """Contents of this file's ``.metadata.json`` sidecar, or ``None`` if it has none."""
+        return self._sidecar_reader() if self._sidecar_reader is not None else None
 
 
 def _matches(rel: str, patterns: Sequence[str]) -> bool:
@@ -104,6 +118,17 @@ class Source:
         )
 
 
+def _local_sidecar(path: Path) -> Callable[[], Optional[bytes]]:
+    def read() -> Optional[bytes]:
+        side = path.with_name(path.name + SIDECAR_SUFFIX)
+        try:
+            return side.read_bytes() if side.is_file() else None
+        except OSError:
+            return None
+
+    return read
+
+
 class LocalSource(Source):
     """A local file or directory (searched recursively)."""
 
@@ -120,7 +145,7 @@ class LocalSource(Source):
             yield SourceFile(
                 uri=str(root), rel_path=root.name, size=st.st_size,
                 modified=datetime.fromtimestamp(st.st_mtime, timezone.utc),
-                _reader=root.read_bytes,
+                _reader=root.read_bytes, _sidecar_reader=_local_sidecar(root),
             )
             return
         for dirpath, dirnames, filenames in os.walk(root):
@@ -134,7 +159,7 @@ class LocalSource(Source):
             )
             for fn in sorted(filenames):
                 rel = f"{rel_dir}/{fn}" if rel_dir else fn
-                if not keep(rel, include, exclude):
+                if is_sidecar(fn) or not keep(rel, include, exclude):
                     continue
                 full = Path(dirpath) / fn
                 try:
@@ -146,7 +171,7 @@ class LocalSource(Source):
                 yield SourceFile(
                     uri=str(full), rel_path=rel, size=st.st_size,
                     modified=datetime.fromtimestamp(st.st_mtime, timezone.utc),
-                    _reader=full.read_bytes,
+                    _reader=full.read_bytes, _sidecar_reader=_local_sidecar(full),
                 )
 
 
@@ -185,6 +210,29 @@ class S3Source(Source):
 
         return read
 
+    def _try_get(self, key: str) -> Optional[bytes]:
+        try:
+            return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        except Exception as e:
+            code = str(getattr(e, "response", {}).get("Error", {}).get("Code", ""))
+            if code in ("NoSuchKey", "404", "NotFound", "AccessDenied", "403"):
+                return None
+            raise
+
+    def _sidecar(self, key: str, listing: Optional[Dict[str, Any]]) -> Callable[[], Optional[bytes]]:
+        side = key + SIDECAR_SUFFIX
+
+        def read() -> Optional[bytes]:
+            # Sidecars seen while listing are fetched directly; once the listing is
+            # complete, a file without one costs no extra request.
+            if listing is not None and side in listing["keys"]:
+                return self.client.get_object(Bucket=self.bucket, Key=side)["Body"].read()
+            if listing is not None and listing["done"]:
+                return None
+            return self._try_get(side)
+
+        return read
+
     def iter_files(self, include=(), exclude=()):
         paginator = self.client.get_paginator("list_objects_v2")
         prefix = self.prefix
@@ -200,14 +248,18 @@ class S3Source(Source):
             yield SourceFile(
                 uri=f"s3://{self.bucket}/{prefix}", rel_path=prefix.rsplit("/", 1)[-1],
                 size=int(single.get("ContentLength", 0)), modified=single.get("LastModified"),
-                _reader=self._reader(prefix),
+                _reader=self._reader(prefix), _sidecar_reader=self._sidecar(prefix, None),
             )
             return
         base = prefix if (not prefix or prefix.endswith("/")) else prefix + "/"
+        listing: Dict[str, Any] = {"keys": set(), "done": False}
         for page in paginator.paginate(Bucket=self.bucket, Prefix=base):
             for obj in page.get("Contents", []) or []:
                 key = obj["Key"]
                 if key.endswith("/"):
+                    continue
+                if is_sidecar(key):
+                    listing["keys"].add(key)
                     continue
                 rel = key[len(base):]
                 if not keep(rel, include, exclude):
@@ -215,7 +267,9 @@ class S3Source(Source):
                 yield SourceFile(
                     uri=f"s3://{self.bucket}/{key}", rel_path=rel, size=int(obj.get("Size", 0)),
                     modified=obj.get("LastModified"), _reader=self._reader(key),
+                    _sidecar_reader=self._sidecar(key, listing),
                 )
+        listing["done"] = True
 
 
 class MultiSource(Source):
