@@ -100,6 +100,7 @@ nav:
       - The notebook app: guide/app.md
       - Folders & S3: guide/sources.md
       - Building an index: guide/indexing.md
+      - Chunking strategies: guide/chunking.md
       - Searching: guide/searching.md
       - Metadata & filtering: guide/metadata.md
       - Semantic & hybrid search: guide/semantic.md

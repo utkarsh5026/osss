@@ -102,6 +102,22 @@ emb = osss.FunctionEmbedder(lambda texts: my_model.encode(texts), name="my-model
 cluster.create_index("kb", "./docs", embedder=emb)
 ```
 
+### Chunking strategies
+
+Besides fixed-size chunks, osss supports the other Bedrock Knowledge Base strategies:
+
+```python
+# Match small chunks, get back the larger section around them (great for RAG)
+idx = cluster.create_index("kb", "./docs", chunking="hierarchical", chunk_size=400, parent_chunk_size=3000)
+res = idx.search("refund window")
+res[0].content, res[0].matched     # parent text, and the child that matched
+
+# Split where the topic changes, measured with the embedding model
+cluster.create_index("reports", "./reports", chunking="semantic", breakpoint_percentile=90)
+```
+
+Guide: [Chunking strategies](https://utkarsh5026.github.io/osss/guide/chunking/).
+
 ### Use an existing cluster
 
 ```python
@@ -147,7 +163,10 @@ All of these can be passed to `create_index(...)`, set in the app, or passed as 
 | --- | --- | --- |
 | `include` / `exclude` | all / hidden + caches | Glob patterns, e.g. `["*.pdf", "reports/**"]` |
 | `file_types` | every supported type | e.g. `["pdf", "md"]` |
+| `chunking` | `fixed` | `fixed`, `hierarchical` (match small chunks, return their parent), `semantic` (split where the topic changes) or `none` |
 | `chunk_size` / `chunk_overlap` | `1000` / `150` | Characters per chunk; `0` indexes whole documents |
+| `parent_chunk_size` | `4000` | Hierarchical: characters per parent chunk |
+| `breakpoint_percentile` | `95` | Semantic: lower values give more, smaller chunks |
 | `analyzer` | `standard` | `english`, `french`, `german`, `cjk`, `whitespace`, … |
 | `semantic` | `False` | Store embeddings for semantic and hybrid search |
 | `embedding_model` | `all-MiniLM-L6-v2` | Any sentence-transformers or Bedrock model id |

@@ -67,6 +67,12 @@ class Index:
         return bool(self.meta.get("_has_vectors"))
 
     @property
+    def chunking(self) -> str:
+        """Chunking strategy the index was built with (``"fixed"`` for older indexes)."""
+        cfg = self.config
+        return cfg.chunking if cfg else "fixed"
+
+    @property
     def embedder(self) -> Optional[Embedder]:
         if self._embedder is None and self.semantic and self.config is not None:
             self._embedder = get_embedder(self.config.embedding_provider, self.config.embedding_model)
@@ -114,8 +120,9 @@ class Index:
             filters[f"metadata.{key}"] = value
         return run_search(
             self.client, self.name, query, mode=mode, k=k, offset=offset, filters=filters,
-            embedder=self.embedder if mode != "keyword" else None, operator=operator,
+            embedder=self.embedder if (mode != "keyword" and self.semantic) else None, operator=operator,
             fuzzy=fuzzy, facets=facets,
+            group_by="parent_id" if self.chunking == "hierarchical" else None,
         )
 
     __call__ = search
@@ -139,7 +146,13 @@ class Index:
         """
         cfg = self.config or IndexConfig(name=self.name)
         if overrides:
-            cfg = cfg.replace(**overrides)
+            new = cfg.replace(**overrides)
+            if new.chunking != cfg.chunking:
+                raise OsssError(
+                    f"Index {self.name!r} uses {cfg.chunking!r} chunking; it can't change for an existing "
+                    "index. Rebuild it with create_index(..., recreate=True)."
+                )
+            cfg = new
         report = ingest(
             self.client, cfg, resolve_source(source), embedder=self.embedder, metadata=metadata,
             replace_existing=True,
@@ -185,6 +198,8 @@ class Index:
             "embedding_model": cfg.embedding_model if (cfg and self.semantic) else None,
             "analyzer": cfg.analyzer if cfg else None,
             "chunk_size": cfg.chunk_size if cfg else None,
+            "chunking": cfg.chunking if cfg else None,
+            "parent_chunk_size": cfg.parent_chunk_size if (cfg and cfg.chunking == "hierarchical") else None,
             "created_at": self.meta.get("created_at"),
             "last_indexed": r["aggregations"]["modified"].get("value_as_string"),
             "managed": bool(self.meta),
@@ -300,7 +315,10 @@ class Cluster:
         """Create an index and (optionally) fill it from a folder or S3 prefix.
 
         ``options`` are :class:`~osss.config.IndexConfig` fields, e.g.
-        ``chunk_size=800, include=["*.pdf"], semantic=True, analyzer="english"``.
+        ``chunk_size=800, include=["*.pdf"], semantic=True, analyzer="english"``,
+        or a chunking strategy: ``chunking="hierarchical"`` (search small chunks,
+        return their larger parent) or ``chunking="semantic"`` (split where the
+        topic changes, using the embedding model).
 
         ``metadata`` is attached to every chunk and can be filtered on later: a
         dict for all files, or a function ``(SourceFile) -> dict`` per file.
@@ -341,6 +359,9 @@ class Cluster:
             if embedder is None:
                 embedder = get_embedder(cfg.embedding_provider, cfg.embedding_model)
             dim = embedder.dimension
+        elif cfg.chunking == "semantic" and embedder is None:
+            # semantic chunking needs the model at ingest time, even without vector search
+            embedder = get_embedder(cfg.embedding_provider, cfg.embedding_model)
         self.client.indices.create(index=cfg.name, body=build_index_body(cfg, dim))
         idx = Index(self, cfg.name)
         if embedder is not None:

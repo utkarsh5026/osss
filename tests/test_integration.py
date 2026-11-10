@@ -125,3 +125,61 @@ def test_metadata_sidecars_and_filters(cluster, corpus, name):
                 assert [h.path for h in res] == ["vacation.txt"]
         finally:
             cluster.delete_index(sem.name)
+
+
+TOPICS = (
+    " ".join(f"Cats purr and nap in the sunny window, cat {i} said." for i in range(10))
+    + "\n\n"
+    + " ".join(f"Money in the bank earns interest every month, account {i} said." for i in range(10))
+)
+
+
+def test_hierarchical_chunking(cluster, tmp_path, name):
+    (tmp_path / "long.txt").write_text(TOPICS)
+    (tmp_path / "short.md").write_text("# Short\nA cat note.")
+    idx = cluster.create_index(name, tmp_path, chunking="hierarchical", chunk_size=150, chunk_overlap=0,
+                               parent_chunk_size=600, progress=False)
+    assert idx.chunking == "hierarchical" and idx.stats()["chunking"] == "hierarchical"
+    assert idx.count() > 4  # children are what gets stored
+
+    res = idx.search("cat", k=20)
+    parents = [h.parent_id for h in res]
+    assert len(parents) == len(set(parents)) == res.total  # each parent once, total counts parents
+    long_hit = next(h for h in res if h.path == "long.txt")
+    assert len(long_hit.content) > len(long_hit.matched) and long_hit.matched in long_hit.content
+    assert "<mark>" in long_hit.snippet
+    # the parent text is stored, not searched: words only in the parent don't match its children
+    child_only = idx.search('"account 9 said"', k=5)
+    assert child_only.total == 1 and "account 9" in child_only[0].matched
+
+    with pytest.raises(osss.OsssError):
+        idx.add(tmp_path, chunking="fixed", progress=False)
+    before = idx.count()
+    idx.add(tmp_path, progress=False)
+    assert idx.count() == before  # re-adding replaces children
+
+    if cluster.has_knn() or cluster.server is not None:
+        sem = cluster.create_index(name + "-sem", tmp_path, chunking="hierarchical", chunk_size=150, chunk_overlap=0,
+                                   parent_chunk_size=600, embedder=toy_embedder(), progress=False)
+        try:
+            for mode in ("semantic", "hybrid"):
+                res = sem.search("cats purr in the window", mode=mode, k=10)
+                ids = [h.parent_id for h in res]
+                assert ids and len(ids) == len(set(ids)) and all(h.matched in h.content for h in res)
+        finally:
+            cluster.delete_index(sem.name)
+
+
+def test_semantic_chunking_keyword_index(cluster, tmp_path, name):
+    (tmp_path / "long.txt").write_text(TOPICS)
+    idx = cluster.create_index(name, tmp_path, chunking="semantic", chunk_size=700, breakpoint_percentile=90,
+                               embedder=toy_embedder(), semantic=False, progress=False)
+    assert not idx.semantic  # boundaries came from the model, but no vectors were stored
+    assert idx.last_report.ok and idx.last_report.chunks >= 2
+    chunks = [h.content for h in idx.search("said", k=20)]
+    assert all(len(c) <= 700 for c in chunks)
+    assert any("Cats" in c and "Money" not in c for c in chunks)
+    assert any("Money" in c and "Cats" not in c for c in chunks)
+    before = idx.count()
+    idx.add(tmp_path, progress=False)
+    assert idx.count() == before

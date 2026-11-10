@@ -45,6 +45,9 @@ Index a folder, file or `s3://` prefix. Starts OpenSearch first if it isn't runn
 | `--exclude 'drafts/**'` | Also skip these (on top of the defaults) |
 | `--types pdf,md` | Only these extensions |
 | `--chunk-size 800` / `--overlap 120` | Chunking (`0` = whole documents) |
+| `--chunking hierarchical` | [Chunking strategy](chunking.md): `fixed` (default), `hierarchical`, `semantic` or `none` |
+| `--parent-chunk-size 3000` | Hierarchical: characters per parent chunk (`--chunk-size` is the child size) |
+| `--breakpoint-percentile 90` | Semantic: lower values give more, smaller chunks |
 | `--analyzer english` | Language analyzer |
 | `--semantic` / `--model ID` | Add embeddings |
 | `--text-fields a,b` / `--title-field` / `--id-field` | CSV/JSON columns |

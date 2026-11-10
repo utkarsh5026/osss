@@ -12,9 +12,9 @@ from typing import Any, Callable, Deque, Dict, Iterator, List, Optional, Tuple
 
 from ._progress import make_progress
 from ._utils import batched, human_bytes, human_count, human_duration, stable_id
-from .chunking import chunk_text
+from .chunking import chunk_document
 from .config import IndexConfig
-from .embeddings import Embedder
+from .embeddings import Embedder, get_embedder
 from .loaders import Document, MissingDependency, UnsupportedFile, is_supported, load
 from .metadata import MetadataLike
 from .metadata import resolve as resolve_metadata
@@ -40,6 +40,11 @@ def build_index_body(cfg: IndexConfig, dimension: Optional[int] = None) -> Dict[
         "page": {"type": "integer"},
         "record": {"type": "integer"},
         "chunk": {"type": "integer"},
+        # hierarchical chunking: the parent a (child) chunk belongs to. The parent
+        # text is only stored, not searched; results return it as context.
+        "parent_id": {"type": "keyword"},
+        "parent_chunk": {"type": "integer"},
+        "parent_content": {"type": "text", "index": False},
         "size": {"type": "long"},
         "modified": {"type": "date"},
         "indexed_at": {"type": "date"},
@@ -158,17 +163,17 @@ def _bounded_map(fn, items: Iterator[Any], workers: int) -> Iterator[Tuple[Any, 
 
 def _make_actions(
     index: str, f: SourceFile, docs: List[Document], cfg: IndexConfig,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None, embedder: Optional[Embedder] = None,
 ) -> List[Dict[str, Any]]:
     now = datetime.now(timezone.utc).isoformat()
     modified = f.modified.isoformat() if f.modified else None
+    embed = embedder.embed_documents if embedder is not None else None
     actions = []
     for d in docs:
-        pieces = chunk_text(d.text, cfg.chunk_size, cfg.chunk_overlap) if cfg.chunk_size else [d.text]
-        for ci, piece in enumerate(pieces):
-            key = ("key", d.doc_key) if d.doc_key else (d.page, d.record)
+        key = ("key", d.doc_key) if d.doc_key else (d.page, d.record)
+        for ci, piece in enumerate(chunk_document(d.text, cfg, embed)):
             src: Dict[str, Any] = {
-                "content": piece,
+                "content": piece.text,
                 "title": d.title or f.name,
                 "file_name": f.name,
                 "path": f.rel_path,
@@ -188,7 +193,14 @@ def _make_actions(
                 src["fields"] = d.fields
             if metadata:
                 src["metadata"] = metadata
-            actions.append({"_index": index, "_id": stable_id(f.uri, *key, ci), "_source": src})
+            if piece.parent is not None:
+                src["parent_id"] = stable_id(f.uri, *key, "parent", piece.parent)
+                src["parent_chunk"] = piece.parent
+                src["parent_content"] = piece.parent_text
+                doc_id = stable_id(f.uri, *key, "child", ci)
+            else:
+                doc_id = stable_id(f.uri, *key, ci)
+            actions.append({"_index": index, "_id": doc_id, "_source": src})
     return actions
 
 
@@ -209,8 +221,16 @@ def ingest(
     ``replace_existing`` deletes previously indexed chunks of each file before
     writing the new ones (used when adding to an existing index, so edited
     files don't leave stale chunks behind).
+
+    ``embedder`` computes the stored vectors of a ``semantic`` index, and also
+    finds the boundaries for ``chunking="semantic"`` (loaded from the config's
+    model when not given).
     """
     from opensearchpy import helpers
+
+    if cfg.chunking == "semantic" and embedder is None:
+        embedder = get_embedder(cfg.embedding_provider, cfg.embedding_model)
+    vectors = embedder if cfg.semantic else None  # only semantic indexes store embeddings
 
     t0 = time.time()
     report = IngestReport(index=cfg.name, source=source.uri)
@@ -268,8 +288,8 @@ def ingest(
             except Exception:
                 pass
         for part in batched(buffer, max(1, cfg.batch_size)):
-            if embedder is not None:
-                vecs = embedder.embed_documents([a["_source"]["content"] for a in part])
+            if vectors is not None:
+                vecs = vectors.embed_documents([a["_source"]["content"] for a in part])
                 for a, v in zip(part, vecs):
                     a["_source"]["embedding"] = v
             _, errors = helpers.bulk(
@@ -298,12 +318,12 @@ def ingest(
                 continue
             try:
                 nbytes, docs, meta = fut.result()
+                actions = _make_actions(cfg.name, f, docs, cfg, meta, embedder)
             except (UnsupportedFile, MissingDependency) as e:
                 report.skipped.append((f.uri, str(e)))
-            except Exception as e:  # parse/read failure; keep going
+            except Exception as e:  # read / parse / chunking failure; keep going
                 report.failed.append((f.uri, f"{type(e).__name__}: {e}"[:300]))
             else:
-                actions = _make_actions(cfg.name, f, docs, cfg, meta)
                 report.bytes_read += nbytes
                 report.documents += len(docs)
                 report.chunks += len(actions)
@@ -312,7 +332,7 @@ def ingest(
                 buffer.extend(actions)
                 pending_sources.append(f.uri)
                 if len(buffer) >= cfg.batch_size:
-                    emit("write", current=f.name, message="Embedding & writing" if embedder else "Writing")
+                    emit("write", current=f.name, message="Embedding & writing" if vectors else "Writing")
                     flush()
             done += 1
             bar.update(done, f.name)

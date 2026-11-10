@@ -10,8 +10,12 @@ Pass these to `cluster.create_index(...)` as keyword arguments, build an `osss.I
 | `include` | list[str] | `[]` (all) | Glob patterns to keep. Patterns without `/` match the file name. |
 | `exclude` | list[str] | hidden files, `__pycache__`, `node_modules` | Glob patterns to skip (replaces the defaults) |
 | `file_types` | list[str] \| None | `None` (all supported) | Extensions to index, e.g. `["pdf", "md"]` |
-| `chunk_size` | int | `1000` | Max characters per chunk; `0` = no chunking |
-| `chunk_overlap` | int | `150` | Characters shared between neighbouring chunks |
+| `chunking` | str | `"fixed"` | [Chunking strategy](../guide/chunking.md): `fixed`, `hierarchical`, `semantic` or `none`. Bedrock names (`FIXED_SIZE`, …) work too. |
+| `chunk_size` | int | `1000` | Max characters per chunk; `0` = no chunking. For `hierarchical`, the child size. |
+| `chunk_overlap` | int | `150` | Characters shared between neighbouring chunks (not used by `semantic`) |
+| `parent_chunk_size` | int | `4000` | `hierarchical`: max characters per parent chunk, returned as the result |
+| `breakpoint_percentile` | float | `95` | `semantic`: split where the distance between sentences is above this percentile |
+| `sentence_buffer` | int | `1` | `semantic`: neighbouring sentences embedded with each sentence |
 | `analyzer` | str | `"standard"` | `standard`, `english`, `french`, `german`, `spanish`, `italian`, `portuguese`, `dutch`, `hindi`, `cjk`, `simple`, `whitespace` |
 | `semantic` | bool | `False` | Also store embeddings for semantic and hybrid search |
 | `embedding_model` | str | `"sentence-transformers/all-MiniLM-L6-v2"` | Any sentence-transformers or Bedrock model id |
@@ -55,9 +59,10 @@ Pass these to `cluster.create_index(...)` as keyword arguments, build an `osss.I
 | `title` | Document title (searched, boosted) |
 | `file_name`, `path`, `folder`, `source`, `file_type` | Where it came from |
 | `page`, `record`, `chunk` | Position within the file |
+| `parent_id`, `parent_chunk`, `parent_content` | `hierarchical` only: the parent chunk this chunk belongs to. `parent_content` is stored but not searched. |
 | `size`, `modified`, `indexed_at` | File metadata |
 | `fields.*` | CSV/JSON/Parquet columns. Numeric strings are stored as numbers. |
 | `metadata.*` | [Custom metadata](../guide/metadata.md) from sidecar files or `metadata=` |
-| `embedding` | The vector (semantic indexes only) |
+| `embedding` | The vector (semantic indexes only; for `hierarchical`, the child's vector) |
 
 Each index also stores the settings it was built with, so `idx.add()` and searches use the same options later.

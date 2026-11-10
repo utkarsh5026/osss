@@ -55,8 +55,20 @@ class IndexConfig:
         include: Glob patterns to keep, e.g. ``["*.pdf", "reports/**"]``. Empty = all.
         exclude: Glob patterns to skip (hidden files and caches by default).
         file_types: Only these extensions (``["pdf", "md"]``). ``None`` = every supported type.
+        chunking: How documents are split, see :data:`osss.chunking.STRATEGIES`:
+            ``"fixed"`` (default), ``"hierarchical"``, ``"semantic"`` or ``"none"``.
+            Bedrock names such as ``"FIXED_SIZE"`` are accepted too.
         chunk_size: Max characters per chunk. ``0`` indexes each document whole.
-        chunk_overlap: Characters shared between consecutive chunks.
+            For hierarchical chunking this is the size of the (searched) child chunks.
+        chunk_overlap: Characters shared between consecutive chunks (fixed and
+            hierarchical children; semantic chunks don't overlap).
+        parent_chunk_size: Hierarchical only: max characters per parent chunk,
+            the context returned for each match.
+        breakpoint_percentile: Semantic only: a chunk ends where the distance
+            between neighbouring sentences is above this percentile (lower = more,
+            smaller chunks).
+        sentence_buffer: Semantic only: sentences on each side embedded together
+            with a sentence when measuring distances (smooths out noise).
         analyzer: Text analyzer, see :data:`ANALYZERS`.
         semantic: Also store embeddings for semantic / hybrid search.
         embedding_model: Model id (sentence-transformers or Bedrock).
@@ -76,8 +88,12 @@ class IndexConfig:
     include: List[str] = field(default_factory=list)
     exclude: List[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     file_types: Optional[List[str]] = None
+    chunking: str = "fixed"
     chunk_size: int = 1000
     chunk_overlap: int = 150
+    parent_chunk_size: int = 4000
+    breakpoint_percentile: float = 95.0
+    sentence_buffer: int = 1
     analyzer: str = "standard"
     semantic: bool = False
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -104,6 +120,20 @@ class IndexConfig:
             raise ValueError("chunk_size and chunk_overlap must be >= 0")
         if self.chunk_size and self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk_overlap must be smaller than chunk_size")
+        from .chunking import normalize_strategy
+
+        self.chunking = normalize_strategy(self.chunking)
+        if self.chunking == "hierarchical":
+            if not self.chunk_size:
+                raise ValueError("Hierarchical chunking needs chunk_size > 0 (the child chunk size)")
+            if self.parent_chunk_size <= self.chunk_size:
+                raise ValueError("parent_chunk_size must be larger than chunk_size for hierarchical chunking")
+        if self.chunking == "semantic" and not self.chunk_size:
+            raise ValueError("Semantic chunking needs chunk_size > 0 (the maximum chunk size)")
+        if not 0 < self.breakpoint_percentile < 100:
+            raise ValueError("breakpoint_percentile must be between 0 and 100")
+        if self.sentence_buffer < 0:
+            raise ValueError("sentence_buffer must be >= 0")
         if self.file_types is not None:
             self.file_types = [t.lower().lstrip(".") for t in self.file_types]
         for attr in ("include", "exclude", "text_fields"):

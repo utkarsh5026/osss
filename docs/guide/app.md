@@ -74,7 +74,9 @@ The scan counts files, total size and file types, lists a sample of files, and w
 | **Index name** | The name you'll search by. It's filled in from the folder name. | Lowercase letters, numbers and `-` |
 | **File types** | One checkbox per type found by the scan | Untick what you don't need |
 | **Search type** | *Keyword* or *Keyword + Semantic* | Semantic adds an embedding model choice |
-| **Chunk size** | Characters per searchable piece. `0` keeps whole documents. | 500–1,000 works well for prose |
+| **Chunking** | *Fixed size*, *Hierarchical*, *Semantic* or *None*. See [Chunking strategies](chunking.md). | Keep *Fixed size* unless you have a reason |
+| **Chunk size** | Characters per searchable piece. `0` keeps whole documents. For *Hierarchical*, the size of the small chunks that are matched. | 500–1,000 works well for prose |
+| **Parent size** | *Hierarchical* only: characters of context returned per match | 2,000–4,000 |
 | **Overlap** | Characters shared between neighbouring chunks | ~15% of the chunk size |
 | **Analyzer** | How text is split into words | `English` handles plurals and tenses for English text |
 | **Replace the index** | Rebuild from scratch if the name already exists | |

@@ -31,6 +31,10 @@ class Hit:
     chunk: Optional[int] = None
     fields: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    #: Hierarchical indexes: ``content`` is the parent chunk (the context to use),
+    #: ``matched`` the smaller child chunk that matched the query.
+    parent_id: Optional[str] = None
+    matched: str = ""
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -46,7 +50,9 @@ class Hit:
         return {
             "id": self.id, "score": self.score, "title": self.title, "content": self.content,
             "source": self.source, "path": self.path, "file_type": self.file_type,
-            "page": self.page, "record": self.record, "chunk": self.chunk, **{f"metadata.{k}": v for k, v in self.metadata.items()},
+            "page": self.page, "record": self.record, "chunk": self.chunk,
+            **({"parent_id": self.parent_id, "matched": self.matched} if self.parent_id else {}),
+            **{f"metadata.{k}": v for k, v in self.metadata.items()},
             **{f"fields.{k}": v for k, v in self.fields.items()},
         }
 
@@ -184,6 +190,7 @@ def _to_hit(h: Dict[str, Any], score: Optional[float] = None) -> Hit:
     s = h.get("_source", {})
     hl = h.get("highlight", {})
     content = s.get("content", "")
+    parent = s.get("parent_content")
     if hl.get("content"):
         snippet = " … ".join(hl["content"])
     else:
@@ -191,10 +198,11 @@ def _to_hit(h: Dict[str, Any], score: Optional[float] = None) -> Hit:
     title = s.get("title") or s.get("file_name") or h.get("_id")
     return Hit(
         id=h.get("_id"), score=float(score if score is not None else (h.get("_score") or 0.0)),
-        title=str(title), snippet=snippet, content=content, source=s.get("source", ""),
+        title=str(title), snippet=snippet, content=parent or content, source=s.get("source", ""),
         path=s.get("path", ""), file_name=s.get("file_name", ""), file_type=s.get("file_type", ""),
         page=s.get("page"), record=s.get("record"), chunk=s.get("chunk"), fields=s.get("fields") or {},
-        metadata=s.get("metadata") or {}, raw=h,
+        metadata=s.get("metadata") or {}, parent_id=s.get("parent_id"),
+        matched=content if parent else "", raw=h,
     )
 
 
@@ -204,7 +212,7 @@ def _facet_aggs() -> Dict[str, Any]:
 
 def _read_facets(resp: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
     aggs = resp.get("aggregations") or {}
-    return {name: {b["key"]: b["doc_count"] for b in agg.get("buckets", [])} for name, agg in aggs.items()}
+    return {name: {b["key"]: b["doc_count"] for b in agg["buckets"]} for name, agg in aggs.items() if "buckets" in agg}
 
 
 def run_search(
@@ -220,7 +228,13 @@ def run_search(
     operator: str = "or",
     fuzzy: bool = False,
     facets: bool = False,
+    group_by: Optional[str] = None,
 ) -> SearchResults:
+    """Run a keyword, semantic or hybrid search.
+
+    ``group_by`` (e.g. ``"parent_id"`` for hierarchical indexes) returns only the
+    best-ranked chunk of each group, so one parent shows up once.
+    """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
     if mode != "keyword" and embedder is None:
@@ -235,7 +249,27 @@ def run_search(
         body = {**base, "query": q, "size": size, "from": frm}
         if facets:
             body["aggs"] = _facet_aggs()
+        if group_by and size:
+            body["collapse"] = {"field": group_by}
+            body.setdefault("aggs", {})["_groups"] = {"cardinality": {"field": group_by}}
         return client.search(index=index, body=body)
+
+    def group_key(h: Dict[str, Any]) -> str:
+        if group_by:
+            v = h.get("_source", {}).get(group_by)
+            if v is not None:
+                return str(v)
+        return h["_id"]
+
+    def dedupe(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen: set = set()
+        out = []
+        for h in hits:
+            g = group_key(h)
+            if g not in seen:
+                seen.add(g)
+                out.append(h)
+        return out
 
     def semantic(size: int) -> Dict[str, Any]:
         vec = embedder.embed_query(query)  # type: ignore[union-attr]
@@ -265,25 +299,33 @@ def run_search(
     if mode == "keyword":
         r = keyword(k, offset)
         hits = [_to_hit(h) for h in r["hits"]["hits"]]
-        return SearchResults(query, mode, index, hits, r["hits"]["total"]["value"], r.get("took", 0), offset, _read_facets(r))
-
-    if mode == "semantic":
-        r = semantic(offset + k)
-        hits = [_to_hit(h) for h in r["hits"]["hits"]][offset:offset + k]
-        total = min(r["hits"]["total"]["value"], offset + k)
+        total = r["hits"]["total"]["value"]
+        if group_by:
+            total = int(((r.get("aggregations") or {}).get("_groups") or {}).get("value", total))
         return SearchResults(query, mode, index, hits, total, r.get("took", 0), offset, _read_facets(r))
 
-    # hybrid: reciprocal rank fusion of BM25 and k-NN results
+    # several children of one parent can match, so fetch extra before grouping
+    widen = 3 if group_by else 1
+
+    if mode == "semantic":
+        r = semantic((offset + k) * widen)
+        found = dedupe(r["hits"]["hits"])
+        hits = [_to_hit(h) for h in found[offset:offset + k]]
+        total = min(len(found), offset + k) if group_by else min(r["hits"]["total"]["value"], offset + k)
+        return SearchResults(query, mode, index, hits, total, r.get("took", 0), offset, _read_facets(r))
+
+    # hybrid: reciprocal rank fusion of BM25 and k-NN results (per group, if grouping)
     depth = max(50, (offset + k) * 3)
-    rk, rs = keyword(depth, 0), semantic(depth)
+    rk, rs = keyword(depth, 0), semantic(depth * widen)
     fused: Dict[str, float] = {}
     docs: Dict[str, Dict[str, Any]] = {}
     for resp in (rk, rs):
-        for rank, h in enumerate(resp["hits"]["hits"], start=1):
-            fused[h["_id"]] = fused.get(h["_id"], 0.0) + 1.0 / (_RRF_K + rank)
-            prev = docs.get(h["_id"])
+        for rank, h in enumerate(dedupe(resp["hits"]["hits"]), start=1):
+            g = group_key(h)
+            fused[g] = fused.get(g, 0.0) + 1.0 / (_RRF_K + rank)
+            prev = docs.get(g)
             if prev is None or (h.get("highlight") and not prev.get("highlight")):
-                docs[h["_id"]] = h
+                docs[g] = h
     order = sorted(fused, key=fused.get, reverse=True)  # type: ignore[arg-type]
     hits = [_to_hit(docs[i], fused[i]) for i in order[offset:offset + k]]
     return SearchResults(
