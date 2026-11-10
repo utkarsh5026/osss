@@ -61,6 +61,15 @@ Choose **Local folder** or **Amazon S3**, enter the path, and click **Scan**.
 
 ![Choosing an S3 prefix](../images/source-s3.png){ .shot }
 
+Not sure of the exact path? Click **Browse** to click your way there instead of typing it:
+
+- Click a **folder** to open it. **↑ Up** and the **breadcrumbs** take you back.
+- It opens at the path you've typed, or at the notebook's current folder if the box is empty. With **Amazon S3** selected it starts with your list of buckets (or inside `s3://bucket/` if you've typed one), and each "folder" is an S3 prefix.
+- Files in the current folder are listed under the folders, so you can see what's there. Hidden files and folders (names starting with `.`) appear when you tick **Hidden**. Folders with many subfolders get a filter box.
+- **Use this folder** fills in the path and starts the scan straight away. Subfolders are included, just as when you type the path.
+
+![Browsing folders](../images/source-browse.png){ .shot }
+
 While it runs, a live counter shows how many files have been found so far, which helps on large S3 prefixes. The result counts files, total size and file types, lists a sample of files, and warns about any types osss can't read (they're shown struck through and marked *skipped*). Nothing is indexed yet.
 
 ![Scan results](../images/source-scan.png){ .shot }
@@ -100,7 +109,7 @@ When it finishes, a summary lists what was indexed, and any skipped or failed fi
 - The table shows every index with its chunk count, size on disk and health.
 - **Open in Search** jumps to the Search tab with that index selected.
 - **Show details** shows the index's settings, file types and a few sample documents.
-- **Add files** indexes another folder or S3 prefix into the same index, using its original settings. Files that were indexed before are **replaced, not duplicated**, so re-running it after your documents change is safe.
+- **Add files** indexes another folder or S3 prefix into the same index (type the path, or click **Browse** to pick it), using its original settings. Files that were indexed before are **replaced, not duplicated**, so re-running it after your documents change is safe.
 - **Delete** turns red and asks you to click again to confirm, so nothing is removed by accident.
 
 ## Server

@@ -173,6 +173,64 @@ def test_s3_source_with_moto():
         assert src.scan().by_type == {"md": 1, "txt": 1}
 
 
+def test_browse_local(tmp_path):
+    from osss.sources import browse
+
+    for d in ("beta/inner", "Alpha", ".git"):
+        (tmp_path / d).mkdir(parents=True)
+    (tmp_path / "b.md").write_text("bb")
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / ".env").write_text("x")
+    (tmp_path / "beta" / "inner" / "deep.md").write_text("x")
+
+    ls = browse(str(tmp_path))
+    assert ls.location == str(tmp_path.resolve())
+    assert [f.name for f in ls.folders] == ["Alpha", "beta"]  # not recursive, hidden skipped, case-insensitive
+    assert [(f.name, f.size) for f in ls.files] == [("a.txt", 1), ("b.md", 2)]
+    assert ls.parent == str(tmp_path.resolve().parent)
+    assert ls.crumbs[-1] == (tmp_path.name, str(tmp_path.resolve()))
+    assert not ls.is_s3 and not ls.truncated
+
+    assert [f.name for f in browse(str(tmp_path), show_hidden=True).folders] == [".git", "Alpha", "beta"]
+    inner = browse(ls.folders[1].location)
+    assert [f.name for f in inner.folders] == ["inner"] and inner.parent == ls.location
+    # a file or a path that doesn't exist (yet) opens the nearest folder
+    assert browse(str(tmp_path / "b.md")).location == ls.location
+    assert browse(str(tmp_path / "missing" / "deeper")).location == ls.location
+    assert browse(str(tmp_path), limit=2).truncated
+
+
+def test_browse_s3_with_moto():
+    moto = pytest.importorskip("moto")
+    import boto3
+
+    from osss.sources import browse
+
+    with moto.mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        for b in ("zeta-bucket", "alpha-bucket"):
+            s3.create_bucket(Bucket=b)
+        for key in ("docs/a.md", "docs/sub/b.txt", "docs/sub/", "docs/.hidden/x", "top.txt"):
+            s3.put_object(Bucket="alpha-bucket", Key=key, Body=b"xyz")
+
+        root = browse("s3://", s3_client=s3)
+        assert [f.name for f in root.folders] == ["alpha-bucket", "zeta-bucket"]
+        assert root.parent is None and root.folders[0].location == "s3://alpha-bucket/"
+
+        bucket = browse("s3://alpha-bucket", s3_client=s3)
+        assert bucket.location == "s3://alpha-bucket/" and bucket.parent == "s3://"
+        assert [f.name for f in bucket.folders] == ["docs"] and [f.name for f in bucket.files] == ["top.txt"]
+
+        docs = browse("s3://alpha-bucket/docs", s3_client=s3)  # trailing slash optional
+        assert docs.location == "s3://alpha-bucket/docs/" and docs.parent == "s3://alpha-bucket/"
+        assert [f.name for f in docs.folders] == ["sub"] and [(f.name, f.size) for f in docs.files] == [("a.md", 3)]
+        assert docs.crumbs == [("s3://", "s3://"), ("alpha-bucket", "s3://alpha-bucket/"), ("docs", "s3://alpha-bucket/docs/")]
+        assert [f.name for f in browse("s3://alpha-bucket/docs/", show_hidden=True, s3_client=s3).folders] == [".hidden", "sub"]
+
+        sub = browse(docs.folders[0].location, s3_client=s3)
+        assert [f.name for f in sub.files] == ["b.txt"]  # the "docs/sub/" folder marker is not a file
+
+
 # ------------------------------------------------------------------ index body / actions / queries
 def test_index_body():
     body = build_index_body(IndexConfig(name="t", analyzer="english"))

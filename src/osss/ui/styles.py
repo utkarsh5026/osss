@@ -364,6 +364,41 @@ body[data-jp-theme-light="false"] .osss, .vscode-dark .osss, .vscode-high-contra
 .osss-app .o-g10 { gap: 10px; }
 .osss-app .o-g14 { gap: 14px; }
 .osss-app .o-stack { gap: 6px; }
+
+/* folder explorer */
+.osss-app .o-browser {
+  border: 1px solid var(--o-line-strong); border-radius: 8px; padding: 8px 12px 10px !important; margin: 6px 0 4px !important;
+  background: var(--o-bg);
+}
+.osss-app .o-crumbs { min-width: 0; }
+.osss-app .o-crumb.jupyter-button {
+  height: 26px; line-height: 24px; padding: 0 6px; margin: 0 !important; border-color: transparent; background: transparent;
+  color: var(--o-muted); font-family: var(--o-mono); font-size: 12px; font-weight: 400; max-width: 260px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.osss-app .o-crumb.jupyter-button:hover:enabled { color: var(--o-fg); background: var(--o-hover); border-color: transparent; }
+.osss-app .o-crumb.o-here.jupyter-button { color: var(--o-fg); font-weight: 600; }
+.osss-app .o-crumb-sep { color: var(--o-faint); font-size: 12px; padding: 0 1px; }
+.osss-app .o-entries { border-top: 1px solid var(--o-line); margin-top: 6px !important; }
+.osss-app .o-entries > .widget-button { flex: none; }
+.osss-app .o-entry.jupyter-button {
+  display: block; width: 100% !important; height: 32px; line-height: 31px; margin: 0 !important; padding: 0 8px;
+  text-align: left; border: 0; border-bottom: 1px solid var(--o-line); border-radius: 0 !important; background: transparent;
+  color: var(--o-fg); font-family: var(--o-mono); font-size: 12px; font-weight: 400; overflow: hidden; text-overflow: ellipsis;
+}
+.osss-app .o-entry.jupyter-button::before {
+  content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 9px; vertical-align: -2px; background-color: var(--o-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.osss-app .o-entry.jupyter-button:hover:enabled { background: var(--o-hover); border-color: var(--o-line); }
+.osss-app .o-entry.jupyter-button:hover:enabled::before { background-color: var(--o-fg); }
+.osss .o-browse-files { margin-top: 0 !important; max-height: 180px; }
+.osss .o-browse-files li { padding-left: 8px; padding-right: 2px; }
+.osss .o-browse-files li:first-child { border-top: 0; }
+.osss .o-browse-files li span:first-child { color: var(--o-muted); }
+.osss .o-browse-loading { display: flex; align-items: center; gap: 8px; padding: 6px 2px 0; }
+.osss .o-browse-loading .o-spin { width: 12px; height: 12px; margin: 0; }
 .osss-app .o-stack > .widget-html:first-child .widget-html-content { line-height: 1.2; }
 </style>
 """
