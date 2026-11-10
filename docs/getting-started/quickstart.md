@@ -33,7 +33,7 @@ By the end of this page you'll have a running OpenSearch, an index built from yo
 
     ### Choose your data
 
-    Open **New index**. Choose **Local folder** or **Amazon S3**, paste a path, and click **Scan**. You'll see how many files there are, their types and their total size, before anything is indexed.
+    Open **New index**. Choose **Local folder** or **Amazon S3**, paste a path (or click **Browse** to pick a folder), and click **Scan**. You'll see how many files there are, their types and their total size, before anything is indexed.
 
     ![Choose your data and scan it](../images/source-scan.png){ .shot }
 

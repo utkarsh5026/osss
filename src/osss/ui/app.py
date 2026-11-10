@@ -2,7 +2,7 @@
 
 Tabs:
   Search     – query any index (keyword / semantic / hybrid), filter, page.
-  New index  – pick a local folder or S3 prefix, preview, configure, build.
+  New index  – pick (type or browse to) a local folder or S3 prefix, preview, configure, build.
   Indexes    – inspect, add files to, or delete indexes.
   Server     – start/stop the local OpenSearch or connect to a remote one.
 """
@@ -153,6 +153,167 @@ class PanelProgress(Progress):
             self._done = self.total
         self._msg = message
         self._render("done" if ok else "fail", force=True)
+
+
+# ------------------------------------------------------------------ folder explorer
+class FolderBrowser(W.VBox):
+    """Click-through explorer for a local folder or an S3 prefix.
+
+    Folders are buttons: clicking one opens it. The breadcrumbs and *Up* go back.
+    *Use this folder* calls ``on_pick(location)``. Listing happens on a background
+    thread (S3 can take a moment) and only the latest request is ever shown.
+    """
+
+    MAX_FOLDERS = 300  # buttons on screen at once; the filter box narrows larger folders
+    MAX_FILES = 40
+    FILTER_FROM = 15  # the filter box appears once a folder has this many subfolders
+
+    def __init__(self, on_pick: Callable[[str], None], on_close: Optional[Callable[[], None]] = None,
+                 pick_label: str = "Use this folder") -> None:
+        super().__init__()
+        self.add_class("o-browser")
+        self.on_pick, self.on_close = on_pick, on_close
+        self.listing = None
+        self._gen = 0  # bumps on every request; stale results are dropped
+        self._pool: List[W.Button] = []  # folder buttons are reused, not recreated, on every click
+        self._shown: List[Any] = []
+
+        self.up = _btn("↑ Up", "o-quiet", tooltip="Go to the parent folder")
+        self.up.layout.flex = "0 0 auto"  # never squeezed by long breadcrumbs
+        self.crumbs = W.HBox([], layout=W.Layout(flex_flow="row wrap", align_items="center", flex="1 1 auto", width="auto"))
+        self.crumbs.add_class("o-crumbs")
+        self.filter = W.Text(placeholder="Filter folders by name", continuous_update=True,
+                             layout=W.Layout(width="100%", display="none"))  # shown for folders with many subfolders
+        self.hidden = W.Checkbox(value=False, description="Hidden", indent=False, layout=W.Layout(width="auto"))
+        self.entries = W.VBox([], layout=W.Layout(max_height="300px", overflow="auto"))
+        self.entries.add_class("o-entries")
+        self.files = W.HTML()
+        self.msg = W.HTML()
+        self.summary = W.HTML(layout=W.Layout(flex="1 1 auto", width="auto"))
+        self.use = _btn(pick_label, "o-primary")
+        self.cancel = _btn("Close", "o-quiet")
+
+        self.up.on_click(lambda b: self.listing and self.listing.parent and self.navigate(self.listing.parent))
+        self.filter.observe(lambda c: self._render_entries(), names="value")
+        self.hidden.observe(lambda c: self.listing and self.navigate(self.listing.location), names="value")
+        self.use.on_click(lambda b: self.listing and self.on_pick(self.listing.location))
+        self.cancel.on_click(lambda b: self.close_browser())
+
+        self.children = [
+            _row(self.up, self.crumbs, self.hidden, wrap=False, gap="6px"),
+            self.filter, self.msg, self.entries, self.files,
+            _row(self.summary, self.cancel, self.use, wrap=False),
+        ]
+
+    # -- public
+    def navigate(self, location: str) -> None:
+        """Show ``location`` (a local path, ``s3://`` for the bucket list, or ``s3://bucket/prefix/``)."""
+        from ..sources import browse
+
+        self._gen += 1
+        gen = self._gen
+        self.msg.value = R.wrap("<div class='o-hint o-browse-loading'><span class='o-spin'></span>"
+                                f"Opening {e(location or 'current folder')}…</div>", standalone=False)
+        self.use.disabled = self.up.disabled = True
+
+        def work():
+            try:
+                listing = browse(location, show_hidden=self.hidden.value)
+            except BaseException as ex:  # noqa: BLE001 - shown inline, the old listing stays usable
+                if gen == self._gen:
+                    self.msg.value = R.wrap(R.callout(f"<b>Can't open {e(location)}</b><br>{e(str(ex) or type(ex).__name__)}", "warn"), standalone=False)
+                    self.use.disabled = self.listing is None
+                    self.up.disabled = not (self.listing and self.listing.parent)
+                return
+            if gen == self._gen:
+                self._show(listing)
+
+        threading.Thread(target=work, daemon=True, name="osss-browse").start()
+
+    def close_browser(self) -> None:
+        self.layout.display = "none"
+        if self.on_close:
+            self.on_close()
+
+    # -- rendering
+    def _show(self, listing) -> None:
+        self.listing = listing
+        self.msg.value = ""
+        self.up.disabled = listing.parent is None
+        self.use.disabled = listing.location == "s3://"  # the bucket list itself isn't a source
+        self._render_crumbs()
+        self.filter.layout.display = "" if len(listing.folders) >= self.FILTER_FROM else "none"
+        if self.filter.value:
+            self.filter.value = ""  # re-renders through the observer
+        else:
+            self._render_entries()
+
+    def _render_crumbs(self) -> None:
+        crumbs = self.listing.crumbs
+        shown: List[Any] = list(enumerate(crumbs))
+        if len(shown) > 6:  # deep paths: first crumb, an ellipsis, then the last four
+            shown = shown[:1] + [None] + shown[-4:]
+        items: List[W.Widget] = []
+        for n, item in enumerate(shown):
+            if n:
+                items.append(W.HTML("<span class='o-crumb-sep'>›</span>"))
+            if item is None:
+                items.append(W.HTML("<span class='o-crumb-sep'>…</span>"))
+                continue
+            i, (label, loc) = item
+            b = _btn(label, "o-crumb", tooltip=loc)
+            if i == len(crumbs) - 1:
+                b.add_class("o-here")
+            b.on_click(lambda _b, loc=loc: self.navigate(loc))
+            items.append(b)
+        old = self.crumbs.children
+        self.crumbs.children = items
+        for w in old:
+            w.close()
+
+    def _render_entries(self) -> None:
+        listing = self.listing
+        if listing is None:
+            return
+        needle = self.filter.value.strip().lower()
+        folders = [f for f in listing.folders if needle in f.name.lower()] if needle else listing.folders
+        self._shown = folders[: self.MAX_FOLDERS]
+        while len(self._pool) < len(self._shown):
+            i = len(self._pool)
+            b = _btn("", "o-entry")
+            b.on_click(lambda _b, i=i: i < len(self._shown) and self.navigate(self._shown[i].location))
+            self._pool.append(b)
+        for b, f in zip(self._pool, self._shown):
+            b.description = f.name
+            b.tooltip = f"Open {f.location}"
+        self.entries.children = self._pool[: len(self._shown)]
+
+        notes: List[str] = []
+        if len(folders) > len(self._shown):
+            notes.append(f"Showing the first {len(self._shown):,} of {len(folders):,} folders. Type in the filter box to narrow them down.")
+        if not listing.folders and not listing.files:
+            notes.append("This folder is empty." if listing.location != "s3://" else "No buckets found.")
+        elif needle and not folders:
+            notes.append(f"No folder matches “{e(self.filter.value.strip())}”.")
+        files_html = ""
+        if listing.files and not needle:
+            from .._utils import human_bytes
+
+            rows = "".join(f"<li><span>{e(f.name)}</span><span>{human_bytes(f.size or 0)}</span></li>"
+                           for f in listing.files[: self.MAX_FILES])
+            more = len(listing.files) - self.MAX_FILES
+            if more > 0:
+                rows += f"<li class='more'><span>and {more:,} more file{'s' if more != 1 else ''}</span><span></span></li>"
+            files_html = f"<ul class='o-files o-browse-files'>{rows}</ul>"
+        hint = "".join(f"<div class='o-hint' style='padding:8px 2px 0'>{n}</div>" for n in notes)
+        self.files.value = R.wrap(hint + files_html, standalone=False) if (hint or files_html) else ""
+
+        nd, nf = len(listing.folders), len(listing.files)
+        bits = [f"{nd:,} folder{'s' if nd != 1 else ''}"] + ([f"{nf:,} file{'s' if nf != 1 else ''} here"] if listing.location != "s3://" else [])
+        if listing.truncated:
+            bits.append("listing stopped early, the folder is very large")
+        sub = "Subfolders are included when you scan." if listing.location != "s3://" else "Pick a bucket."
+        self.summary.value = R.wrap(f"<span class='o-hint'>{' · '.join(bits)}. {sub}</span>", standalone=False)
 
 
 # ------------------------------------------------------------------ the app
@@ -399,14 +560,18 @@ class App(W.VBox):
         # --- step 1: source
         self.c_kind = W.ToggleButtons(options=[("Local folder", "local"), ("Amazon S3", "s3")], value="local", style={"button_width": "auto"})
         self.c_path = W.Text(placeholder="/home/sagemaker-user/my-docs", layout=W.Layout(flex="1 1 auto", width="auto"))
+        self.c_browse = _btn("Browse", tooltip="Click through your folders (or S3 buckets) to pick one")
         self.c_scan = _btn("Scan", "o-primary")
         self.c_scan_out = W.HTML()
+        self.c_browser = FolderBrowser(on_pick=self._pick_source, on_close=lambda: self._browse_label(self.c_browse, False))
+        self.c_browser.layout.display = "none"
         self.c_kind.observe(self._on_kind, names="value")
+        self.c_browse.on_click(lambda b: self._toggle_browser(self.c_browser, self.c_browse, self._browse_start()))
         self.c_scan.on_click(lambda b: self._do_scan())
         self.c_path.observe(lambda c: self._suggest_name(), names="value")
         step1 = _panel(
             W.HTML(R.wrap(R.step("01", "Choose your data", "A folder on this machine or an S3 prefix. Subfolders are included."), standalone=False)),
-            self.c_kind, _row(self.c_path, self.c_scan, wrap=False), self.c_scan_out,
+            self.c_kind, _row(self.c_path, self.c_browse, self.c_scan, wrap=False), self.c_browser, self.c_scan_out,
         )
 
         # --- step 2: configure
@@ -519,6 +684,40 @@ class App(W.VBox):
             self.c_path.placeholder = "/home/sagemaker-user/my-docs   or   ./data"
             if self.c_path.value.startswith("s3://"):
                 self.c_path.value = ""
+        if getattr(self, "_picking", False):
+            return
+        if getattr(self, "c_browser", None) is not None and self.c_browser.layout.display != "none":
+            self.c_browser.navigate(self._browse_start())  # follow the Local / S3 switch
+
+    # -- folder explorer
+    @staticmethod
+    def _browse_label(button: W.Button, is_open: bool) -> None:
+        button.description = "Hide browser" if is_open else "Browse"
+
+    def _toggle_browser(self, browser: FolderBrowser, button: W.Button, start: str) -> None:
+        if browser.layout.display != "none":
+            browser.close_browser()
+            return
+        browser.layout.display = ""
+        self._browse_label(button, True)
+        browser.navigate(start)
+
+    def _browse_start(self) -> str:
+        """Where the explorer opens: the typed path if any, else the current folder or the bucket list."""
+        path = self.c_path.value.strip()
+        if self.c_kind.value == "s3":
+            return path if path.startswith("s3://") else "s3://"
+        return path or "."
+
+    def _pick_source(self, location: str) -> None:
+        self._picking = True
+        try:
+            self.c_kind.value = "s3" if location.startswith("s3://") else "local"
+            self.c_path.value = location
+        finally:
+            self._picking = False
+        self.c_browser.close_browser()
+        self._do_scan()
 
     def _on_name_typed(self, change) -> None:
         if not getattr(self, "_setting_name", False):
@@ -786,6 +985,10 @@ class App(W.VBox):
         self.ix_detail_out = W.HTML()
         self.ix_add_path = W.Text(placeholder="./more-docs   or   s3://bucket/prefix/", layout=W.Layout(flex="1 1 auto", width="auto"))
         self.ix_add = _btn("Add files")
+        self.ix_browse = _btn("Browse", tooltip="Click through your folders to pick one. Type s3://bucket/ first to browse S3.")
+        self.ix_browser = FolderBrowser(on_pick=self._pick_add_path, on_close=lambda: self._browse_label(self.ix_browse, False))
+        self.ix_browser.layout.display = "none"
+        self.ix_browse.on_click(lambda b: self._toggle_browser(self.ix_browser, self.ix_browse, self.ix_add_path.value.strip() or "."))
         self.ix_add_progress = W.HTML()
         self.ix_msg = W.HTML()
         self._delete_armed = ""
@@ -810,11 +1013,16 @@ class App(W.VBox):
                 _html(R.step("", "Add or update files",
                              "Uses the index's original settings. Files already indexed are replaced, "
                              "so re-running on an updated folder is safe.")),
-                _row(self.ix_add_path, self.ix_add, wrap=False),
+                _row(self.ix_add_path, self.ix_browse, self.ix_add, wrap=False),
+                self.ix_browser,
                 self.ix_msg,
                 self.ix_add_progress,
             ),
         ])
+
+    def _pick_add_path(self, location: str) -> None:
+        self.ix_add_path.value = location
+        self.ix_browser.close_browser()
 
     def _refresh_indexes_table(self) -> None:
         if not self._connected():
