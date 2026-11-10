@@ -1,0 +1,242 @@
+"""Fast tests that need no OpenSearch."""
+
+import io
+import json
+from datetime import datetime, timezone
+
+import pytest
+
+from osss._utils import sanitize_index_name, stable_id
+from osss.chunking import chunk_text
+from osss.config import IndexConfig
+from osss.indexer import _make_actions, build_index_body
+from osss.loaders import UnsupportedFile, load
+from osss.search import build_filters, run_search
+from osss.sources import LocalSource, S3Source, SourceFile, keep, resolve_source
+
+
+def sf(name: str, data: bytes) -> SourceFile:
+    return SourceFile(uri=f"/x/{name}", rel_path=name, size=len(data), modified=datetime.now(timezone.utc), _reader=lambda: data)
+
+
+CFG = IndexConfig(name="t")
+
+
+# ------------------------------------------------------------------ utils / config
+def test_sanitize_index_name():
+    assert sanitize_index_name("My Reports 2024") == "my-reports-2024"
+    assert sanitize_index_name("s3://bucket/x") == "s3-bucket-x"
+    assert sanitize_index_name("__x") == "x"
+    assert sanitize_index_name("") == "my-index"
+
+
+def test_config_validation():
+    with pytest.raises(ValueError):
+        IndexConfig(name="Bad Name")
+    with pytest.raises(ValueError):
+        IndexConfig(name="ok", chunk_size=100, chunk_overlap=100)
+    with pytest.raises(ValueError):
+        IndexConfig(name="ok", analyzer="klingon")
+    c = IndexConfig(name="ok", file_types=[".PDF"], include="*.md", embedding_model="amazon.titan-embed-text-v2:0")
+    assert c.file_types == ["pdf"] and c.include == ["*.md"] and c.embedding_provider == "bedrock"
+    assert IndexConfig.from_dict({**c.to_dict(), "unknown": 1}).name == "ok"
+
+
+def test_stable_id_is_deterministic():
+    assert stable_id("a", 1, None) == stable_id("a", 1, None)
+    assert stable_id("a", 1) != stable_id("a", 2)
+
+
+# ------------------------------------------------------------------ chunking
+def test_chunking_respects_size_and_overlap():
+    text = " ".join(f"Sentence number {i} is here." for i in range(400))
+    chunks = chunk_text(text, 500, 100)
+    assert len(chunks) > 5
+    assert all(len(c) <= 500 for c in chunks)
+    # overlap: the start of each chunk appears at the end of the previous one
+    assert chunks[1][:20] in chunks[0]
+    # nothing lost
+    assert "Sentence number 399" in chunks[-1]
+
+
+def test_chunking_small_and_disabled():
+    assert chunk_text("short", 1000, 100) == ["short"]
+    assert chunk_text("x" * 5000, 0, 0) == ["x" * 5000]
+    assert chunk_text("   ", 100, 10) == []
+    assert all(len(c) <= 300 for c in chunk_text("a" * 1000, 300, 0))
+
+
+# ------------------------------------------------------------------ loaders
+def test_markdown_title_and_front_matter():
+    md = b"---\ntitle: Refunds\n---\n# Heading\nBody text"
+    [d] = load(sf("r.md", md), CFG)
+    assert d.title == "Refunds" and "title:" not in d.text and "Body text" in d.text
+
+
+def test_html_strips_scripts():
+    html = b"<html><head><title>T</title><script>evil()</script></head><body><p>Hello &amp; bye</p></body></html>"
+    [d] = load(sf("a.html", html), CFG)
+    assert d.title == "T" and "evil" not in d.text and "Hello & bye" in d.text
+
+
+def test_csv_records_and_fields():
+    data = b"id,name,notes\n1,Tent,Very light\n2,Lamp,Bright\n"
+    cfg = IndexConfig(name="t", id_field="id", text_fields=["notes"], title_field="name")
+    docs = load(sf("p.csv", data), cfg)
+    assert [d.title for d in docs] == ["Tent", "Lamp"]
+    assert docs[0].text == "Very light" and docs[0].fields["id"] == "1" and docs[0].doc_key == "1"
+
+
+def test_json_list_wrapped_in_dict_and_jsonl():
+    data = json.dumps({"items": [{"title": "A", "x": 1}, {"title": "B", "x": 2}]}).encode()
+    assert [d.title for d in load(sf("a.json", data), CFG)] == ["A", "B"]
+    jl = b'{"q": "one"}\nnot json\n{"q": "two"}\n'
+    assert len(load(sf("a.jsonl", jl), CFG)) == 2
+
+
+def test_ipynb_and_docx():
+    nb = {"cells": [{"cell_type": "markdown", "source": ["# Churn\n", "text"]}, {"cell_type": "code", "source": "x = 1"}]}
+    [d] = load(sf("n.ipynb", json.dumps(nb).encode()), CFG)
+    assert d.title == "Churn" and "x = 1" in d.text
+    docx = pytest.importorskip("docx")
+    doc = docx.Document()
+    doc.add_heading("Policy", 1)
+    doc.add_paragraph("Use 2FA.")
+    buf = io.BytesIO()
+    doc.save(buf)
+    [d] = load(sf("s.docx", buf.getvalue()), CFG)
+    assert d.title == "Policy" and "Use 2FA." in d.text
+
+
+def test_parquet():
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    buf = io.BytesIO()
+    pq.write_table(pa.table({"title": ["x", "y"], "n": [1, 2]}), buf)
+    docs = load(sf("d.parquet", buf.getvalue()), CFG)
+    assert [d.fields["n"] for d in docs] == [1, 2]
+
+
+def test_binary_and_unknown():
+    with pytest.raises(UnsupportedFile):
+        load(sf("img.png", b"\x89PNG\x00\x00"), CFG)
+    [d] = load(sf("LICENSE", b"MIT License text"), CFG)
+    assert "MIT" in d.text
+
+
+# ------------------------------------------------------------------ sources
+def test_local_source_excludes(tmp_path):
+    (tmp_path / "a.md").write_text("a")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text("x")
+    (tmp_path / "node_modules" / "p").mkdir(parents=True)
+    (tmp_path / "node_modules" / "p" / "i.js").write_text("x")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.pdf").write_bytes(b"x")
+    files = list(LocalSource(tmp_path).iter_files(exclude=IndexConfig(name="t").exclude))
+    assert sorted(f.rel_path for f in files) == ["a.md", "sub/b.pdf"]
+    only_pdf = list(LocalSource(tmp_path).iter_files(include=["*.pdf"]))
+    assert [f.rel_path for f in only_pdf] == ["sub/b.pdf"]
+
+
+def test_keep_patterns():
+    assert keep("docs/a.md", ["docs/**"])
+    assert not keep("other/a.md", ["docs/**"])
+    assert not keep("x/.hidden", (), ["*/.*"])
+
+
+def test_resolve_source(tmp_path):
+    assert isinstance(resolve_source(str(tmp_path)), LocalSource)
+    assert isinstance(resolve_source("s3://bucket/prefix/"), S3Source)
+    with pytest.raises(FileNotFoundError):
+        resolve_source(str(tmp_path / "missing"))
+
+
+def test_s3_source_with_moto():
+    moto = pytest.importorskip("moto")
+    import boto3
+
+    with moto.mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket="osss-bucket")
+        s3.put_object(Bucket="osss-bucket", Key="docs/a.md", Body=b"# A\nhello")
+        s3.put_object(Bucket="osss-bucket", Key="docs/sub/b.txt", Body=b"world")
+        s3.put_object(Bucket="osss-bucket", Key="docs/sub/", Body=b"")
+        s3.put_object(Bucket="osss-bucket", Key="other/c.txt", Body=b"nope")
+        src = S3Source("s3://osss-bucket/docs", client=s3)
+        files = list(src.iter_files())
+        assert sorted(f.rel_path for f in files) == ["a.md", "sub/b.txt"]
+        assert files[0].read().startswith(b"# A")
+        single = list(S3Source("s3://osss-bucket/docs/a.md", client=s3).iter_files())
+        assert [f.rel_path for f in single] == ["a.md"]
+        assert src.scan().by_type == {"md": 1, "txt": 1}
+
+
+# ------------------------------------------------------------------ index body / actions / queries
+def test_index_body():
+    body = build_index_body(IndexConfig(name="t", analyzer="english"))
+    props = body["mappings"]["properties"]
+    assert props["content"]["analyzer"] == "english" and "embedding" not in props
+    sem = build_index_body(IndexConfig(name="t", semantic=True), dimension=384)
+    assert sem["mappings"]["properties"]["embedding"]["dimension"] == 384
+    assert sem["settings"]["index"]["knn"] is True
+    assert sem["mappings"]["_meta"]["osss"]["config"]["semantic"] is True
+    with pytest.raises(ValueError):
+        build_index_body(IndexConfig(name="t", semantic=True))
+
+
+def test_actions_are_stable():
+    f = sf("a.md", b"x")
+    [d] = load(sf("a.md", b"# T\n" + b"word " * 500), CFG)
+    a1 = _make_actions("t", f, [d], IndexConfig(name="t", chunk_size=300, chunk_overlap=50))
+    a2 = _make_actions("t", f, [d], IndexConfig(name="t", chunk_size=300, chunk_overlap=50))
+    assert len(a1) > 3 and [a["_id"] for a in a1] == [a["_id"] for a in a2]
+    assert a1[0]["_source"]["title"] == "T" and a1[0]["_source"]["file_type"] == "md"
+
+
+def test_build_filters():
+    f = build_filters({"file_type": ["pdf", "md"], "fields.category": "camping", "fields.year": {"gte": 2020}, "x": None})
+    assert {"terms": {"file_type": ["pdf", "md"]}} in f
+    assert {"terms": {"fields.category.keyword": ["camping"]}} in f
+    assert {"range": {"fields.year": {"gte": 2020}}} in f
+    assert len(f) == 3
+
+
+class FakeClient:
+    def __init__(self, hits):
+        self.hits = hits
+        self.bodies = []
+
+    def search(self, index, body):
+        self.bodies.append(body)
+        return {"took": 3, "hits": {"total": {"value": len(self.hits)}, "hits": self.hits}}
+
+
+def _hit(i, content="text <b>", hl=None):
+    h = {"_id": str(i), "_score": 1.0 / (i + 1), "_source": {"content": content, "title": f"T{i}", "path": "p", "file_type": "md"}}
+    if hl:
+        h["highlight"] = {"content": hl}
+    return h
+
+
+def test_keyword_search_escapes_unhighlighted_content():
+    c = FakeClient([_hit(0, "<script>x</script>")])
+    r = run_search(c, "i", "hello", mode="keyword")
+    assert "<script>" not in r[0].snippet and "&lt;script&gt;" in r[0].snippet
+    assert c.bodies[0]["highlight"]["encoder"] == "html"
+    assert "<script>" not in r._repr_html_().split("<style>")[-1].split("</style>", 1)[1]
+
+
+def test_hybrid_rrf_merges():
+    class E:
+        name, dimension = "e", 2
+
+        def embed_query(self, t):
+            return [1.0, 0.0]
+
+    c = FakeClient([_hit(0), _hit(1), _hit(2)])
+    r = run_search(c, "i", "q", mode="hybrid", k=2, embedder=E())
+    assert len(r) == 2 and r.total == 3 and r[0].id == "0"
+    with pytest.raises(ValueError):
+        run_search(c, "i", "q", mode="semantic")
