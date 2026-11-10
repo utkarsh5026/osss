@@ -239,7 +239,7 @@ def run_search(
             body["aggs"] = _facet_aggs()
         return client.search(index=index, body=body)
 
-    if mode == "keyword" and not query.strip():
+    if mode == "keyword" and not query.strip() and not flt:
         # Browsing: one chunk per file so the listing shows the variety of the index.
         body = {
             "_source": {"excludes": ["embedding"]}, "query": {"bool": {"filter": flt}} if flt else {"match_all": {}},

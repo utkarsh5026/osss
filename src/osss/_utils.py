@@ -21,7 +21,7 @@ def osss_home() -> Path:
     """Directory where osss keeps OpenSearch binaries, data and logs.
 
     Override with the ``OSSS_HOME`` environment variable. When running as root
-    (the default in SageMaker Studio kernels) we default to ``/opt/osss`` because
+    (Studio Classic, many container images) we default to ``/opt/osss`` because
     OpenSearch refuses to run as root and the unprivileged user it is started as
     cannot traverse ``/root``.
     """

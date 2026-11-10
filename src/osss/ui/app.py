@@ -652,8 +652,6 @@ class App(W.VBox):
         progress = PanelProgress(self.c_progress)
 
         def on_event(ev: Dict[str, Any]) -> None:
-            if ev.get("stage") == "done":
-                return
             self.c_stats.value = R.wrap(R.stats([
                 (f"{human_count(ev['files_done'])} / {human_count(ev['files_total'])}", "Files"),
                 (human_count(ev["chunks"]), "Chunks"),

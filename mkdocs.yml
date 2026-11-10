@@ -1,0 +1,111 @@
+site_name: osss
+site_description: OpenSearch in your notebook. Index S3 buckets or local folders and search them from SageMaker, JupyterLab, VS Code or Colab.
+site_url: https://utkarsh5026.github.io/osss/
+repo_url: https://github.com/utkarsh5026/osss
+repo_name: utkarsh5026/osss
+edit_uri: edit/main/docs/
+copyright: Apache-2.0 licensed
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    logo: material/magnify
+    repo: fontawesome/brands/github
+  favicon: images/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+
+plugins:
+  - search
+  - glightbox:
+      skip_classes:
+        - cli
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/utkarsh5026/osss
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+not_in_nav: |
+  /images/**
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Installation: getting-started/installation.md
+      - 5-minute quickstart: getting-started/quickstart.md
+  - Guides:
+      - The notebook app: guide/app.md
+      - Folders & S3: guide/sources.md
+      - Building an index: guide/indexing.md
+      - Searching: guide/searching.md
+      - Semantic & hybrid search: guide/semantic.md
+      - Running OpenSearch: guide/server.md
+      - Command line: guide/cli.md
+  - SageMaker: sagemaker.md
+  - Reference:
+      - Python API: reference/api.md
+      - All options: reference/configuration.md
+  - Troubleshooting: troubleshooting.md

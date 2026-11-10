@@ -209,8 +209,7 @@ def cmd_doctor(args) -> None:
         row(creds is not None, "AWS credentials", "found" if creds else "none (needed for S3 / Bedrock)")
     except Exception as e:
         row(False, "AWS credentials", str(e))
-    for mod, label, extra in (("pypdf", "PDF support", "pdf"), ("docx", "DOCX support", "docx"),
-                              ("pyarrow", "Parquet support", "parquet"), ("sentence_transformers", "Local embeddings", "semantic")):
+    for mod, label, extra in (("pypdf", "PDF support", "pdf"), ("pyarrow", "Parquet support", "parquet"), ("sentence_transformers", "Local embeddings", "semantic")):
         ok = module_available(mod)
         row(ok if ok else None, label, "installed" if ok else escape(f"pip install 'osss[{extra}]'"))
     console.print(Panel.fit(t, title="osss doctor", border_style="magenta"))

@@ -57,7 +57,9 @@ class SentenceTransformerEmbedder(Embedder):
         self.name = model
         self.batch_size = batch_size
         self.model = SentenceTransformer(model, device=device)
-        get_dim = getattr(self.model, "get_sentence_embedding_dimension", None)
+        get_dim = getattr(self.model, "get_embedding_dimension", None) or getattr(
+            self.model, "get_sentence_embedding_dimension", None
+        )
         self.dimension = int(get_dim() if get_dim else len(self.model.encode(["probe"])[0]))
         if model.startswith("intfloat/e5") or "/e5-" in model:
             self._doc_prefix, self._query_prefix = "passage: ", "query: "

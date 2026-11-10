@@ -41,7 +41,7 @@ def build_index_body(cfg: IndexConfig, dimension: Optional[int] = None) -> Dict[
         "size": {"type": "long"},
         "modified": {"type": "date"},
         "indexed_at": {"type": "date"},
-        "fields": {"type": "object", "dynamic": True},
+        "fields": {"type": "object", "dynamic": True},  # CSV/JSON columns; numbers in strings become numeric
     }
     settings: Dict[str, Any] = {
         "number_of_shards": cfg.shards,
@@ -66,7 +66,10 @@ def build_index_body(cfg: IndexConfig, dimension: Optional[int] = None) -> Dict[
             "embedding_dimension": dimension,
         }
     }
-    return {"settings": {"index": settings}, "mappings": {"_meta": meta, "dynamic": True, "properties": props}}
+    return {
+        "settings": {"index": settings},
+        "mappings": {"_meta": meta, "dynamic": True, "numeric_detection": True, "properties": props},
+    }
 
 
 @dataclass

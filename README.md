@@ -2,6 +2,8 @@
 
 **OpenSearch in your notebook.** Point it at an S3 prefix or a local folder, pick a few options, and search. Works in SageMaker (Studio and notebook instances), JupyterLab, VS Code, Colab and plain Python.
 
+**📖 Documentation: [utkarsh5026.github.io/osss](https://utkarsh5026.github.io/osss/)**: installation, a 5-minute quickstart, a guide to the app, and a SageMaker guide.
+
 ```python
 %pip install -q "osss @ git+https://github.com/utkarsh5026/osss.git"
 ```
@@ -140,7 +142,7 @@ Server options for `osss.start(...)`: `semantic`, `heap="1g"`, `port=9200`, `bac
 
 ## SageMaker notes
 
-- **Studio (JupyterLab):** Docker isn't available, so osss uses the tarball. The kernel runs as root and OpenSearch refuses to run as root, so osss starts it as the unprivileged `nobody` user.
+- **Studio (JupyterLab):** Docker isn't available, so osss uses the tarball. If the kernel runs as root (Studio Classic or custom images), osss starts OpenSearch as the unprivileged `nobody` user, since OpenSearch refuses to run as root.
 - **Notebook instances:** Docker is available and used. To preinstall osss on every start, add this to a lifecycle configuration:
   ```bash
   sudo -u ec2-user -i <<'EOF'
@@ -158,6 +160,7 @@ Server options for `osss.start(...)`: `semantic`, `heap="1g"`, `port=9200`, `bac
 pip install -e ".[dev]"
 pytest                                        # fast unit tests
 OSSS_TEST_LOCAL=1 pytest -m integration       # starts a real OpenSearch
+pip install -e ".[docs]" && mkdocs serve      # docs at http://127.0.0.1:8000
 ```
 
 Apache-2.0 licensed.

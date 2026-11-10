@@ -31,14 +31,16 @@ dependencies = [
   "rich>=12",
   "tqdm>=4.64",
   "pypdf>=3.9",
+  "python-docx>=0.8",
 ]
 
 [project.optional-dependencies]
-docx = ["python-docx>=0.8"]
+docx = []  # kept for compatibility; Word support is now built in
 parquet = ["pandas>=1.3", "pyarrow>=8"]
 semantic = ["sentence-transformers>=2.2"]
-all = ["python-docx>=0.8", "pandas>=1.3", "pyarrow>=8", "sentence-transformers>=2.2"]
-dev = ["pytest>=7", "moto[s3]>=5", "python-docx>=0.8", "pandas>=1.3", "pyarrow>=8"]
+all = ["pandas>=1.3", "pyarrow>=8", "sentence-transformers>=2.2"]
+dev = ["pytest>=7", "moto[s3]>=5", "pandas>=1.3", "pyarrow>=8"]
+docs = ["mkdocs-material>=9.5", "mkdocs-glightbox>=0.4"]
 
 [project.scripts]
 osss = "osss.cli:main"
