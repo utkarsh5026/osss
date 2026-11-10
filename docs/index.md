@@ -42,7 +42,7 @@ Local paths or `s3://` prefixes. Supports PDF, Word, Markdown, HTML, CSV, JSON, 
 
 <div markdown>
 ### :material-tune-variant: Real control
-Choose the chunk size, language analyzer, file filters, which CSV/JSON columns to search, and shards. Sensible defaults for all of them.
+Choose the chunk size, language analyzer, file filters, which CSV/JSON columns to search, and shards. Tag files with [metadata](guide/metadata.md) to filter on, using Bedrock-compatible sidecars. Sensible defaults for all of them.
 </div>
 
 <div markdown>

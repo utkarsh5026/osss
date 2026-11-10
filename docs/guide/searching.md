@@ -61,8 +61,24 @@ idx.search("",       filters={"modified": {"gte": "2025-01-01"}})       # recent
 | `page`, `record`, `chunk` | PDF page, CSV/JSON row (from 0), chunk number |
 | `modified`, `indexed_at`, `size` | File timestamps and size in bytes |
 | `fields.<column>` | Any column from CSV, JSON or Parquet records |
+| `metadata.<key>` | Your [custom metadata](metadata.md) (sidecar files or `metadata=`) |
 
 A list means "any of these": `{"file_type": ["pdf", "docx"]}`. A dict with `gte`, `gt`, `lte` or `lt` means a range.
+
+### Filtering on metadata
+
+`metadata=` is a shortcut for `metadata.<key>` filters:
+
+```python
+idx.search("parental leave", metadata={"department": "hr"})
+idx.search("parental leave", metadata={"department": ["hr", "legal"], "year": {"gte": 2023}})
+idx.search("", metadata={"tags": "benefits"})          # list attributes match if they contain the value
+idx.search("", metadata={"confidential": False})
+```
+
+It's the same as `filters={"metadata.department": "hr", ...}`, and the two can be combined. String values match exactly (case-sensitive). Like CSV/JSON fields, strings that look like numbers or dates are stored as numbers or dates, so filter those with numbers (`{"year": 2024}`) or ranges (`{"published": {"gte": "2024-01-01"}}`).
+
+Metadata filters work the same way in keyword, semantic and hybrid search. More examples, value types and Bedrock filter equivalents are in [Metadata & filtering](metadata.md#4-search-with-filters).
 
 !!! tip "Browse without a query"
     `idx.search("")` (or `idx.sample()`) lists documents. With filters, it returns everything that matches them, for example every camping product under $100.
@@ -86,6 +102,7 @@ for hit in res:
     hit.snippet      # HTML with <mark> around matches
     hit.content      # the full chunk text
     hit.fields       # original columns for CSV/JSON/Parquet
+    hit.metadata     # your custom metadata, e.g. {"department": "hr", "year": 2024}
 
 res.to_pandas()      # DataFrame, one row per hit
 res.to_list()        # list of dicts (e.g. for JSON)
@@ -120,6 +137,7 @@ Send `prompt` to any model: Amazon Bedrock, a SageMaker endpoint or an API.
 osss search handbook "refund after 30 days" -k 5
 osss search handbook "refund" --type pdf --fuzzy
 osss search handbook "refund" --json | jq '.[0].title'
+osss search handbook "leave" --meta department=hr --meta year=2024
 ```
 
 ![osss search output](../images/cli/search.svg){ .cli }
@@ -133,5 +151,5 @@ cluster.client.search(index="handbook", body={"query": {"match": {"title": "refu
 ```
 
 <div class="next" markdown>
-[Semantic & hybrid search →](semantic.md){ .md-button .md-button--primary }
+[Metadata & filtering →](metadata.md){ .md-button .md-button--primary }
 </div>

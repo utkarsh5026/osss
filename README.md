@@ -53,6 +53,24 @@ res.to_pandas()            # DataFrame
 res.context()              # numbered, cited text, ready to paste into an LLM prompt (RAG)
 ```
 
+### Metadata (Bedrock-compatible)
+
+Tag every chunk of a file and filter on it. Put a `<file>.metadata.json` sidecar next to a file, in the same format as Amazon Bedrock Knowledge Bases, or pass `metadata=` in Python:
+
+```jsonc
+// s3://my-bucket/handbook/leave-policy.pdf.metadata.json
+{"metadataAttributes": {"department": "hr", "year": 2024, "tags": ["leave", "benefits"]}}
+```
+
+```python
+idx = cluster.create_index("handbook", "s3://my-bucket/handbook/",
+                           metadata=lambda f: {"team": f.folder})   # or a plain dict
+idx.search("parental leave", metadata={"department": "hr", "year": {"gte": 2023}})
+res[0].metadata            # {"department": "hr", "year": 2024, ...}
+```
+
+Step-by-step guide: [Metadata & filtering](https://utkarsh5026.github.io/osss/guide/metadata/).
+
 Add new or changed files later. Re-indexing a file replaces its old chunks, so this is safe to re-run:
 
 ```python
@@ -134,6 +152,7 @@ All of these can be passed to `create_index(...)`, set in the app, or passed as 
 | `semantic` | `False` | Store embeddings for semantic and hybrid search |
 | `embedding_model` | `all-MiniLM-L6-v2` | Any sentence-transformers or Bedrock model id |
 | `text_fields` / `title_field` / `id_field` | auto | Which CSV/JSON/Parquet columns to search, use as the title, or use as a stable id |
+| `metadata_files` | `True` | Read `<file>.metadata.json` sidecars (Bedrock format) and attach them to every chunk |
 | `max_file_mb` | `100` | Skip larger files |
 | `workers` | `8` | Parallel readers (S3 downloads benefit most) |
 | `shards` / `replicas` | `1` / `0` | OpenSearch index settings |

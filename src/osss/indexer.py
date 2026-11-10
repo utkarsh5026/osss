@@ -16,6 +16,8 @@ from .chunking import chunk_text
 from .config import IndexConfig
 from .embeddings import Embedder
 from .loaders import Document, MissingDependency, UnsupportedFile, is_supported, load
+from .metadata import MetadataLike
+from .metadata import resolve as resolve_metadata
 from .sources import Source, SourceFile
 
 EventCallback = Callable[[Dict[str, Any]], None]
@@ -42,6 +44,7 @@ def build_index_body(cfg: IndexConfig, dimension: Optional[int] = None) -> Dict[
         "modified": {"type": "date"},
         "indexed_at": {"type": "date"},
         "fields": {"type": "object", "dynamic": True},  # CSV/JSON columns; numbers in strings become numeric
+        "metadata": {"type": "object", "dynamic": True},  # per-file custom metadata (sidecars / metadata=)
     }
     settings: Dict[str, Any] = {
         "number_of_shards": cfg.shards,
@@ -153,7 +156,10 @@ def _bounded_map(fn, items: Iterator[Any], workers: int) -> Iterator[Tuple[Any, 
             yield pending.popleft()
 
 
-def _make_actions(index: str, f: SourceFile, docs: List[Document], cfg: IndexConfig) -> List[Dict[str, Any]]:
+def _make_actions(
+    index: str, f: SourceFile, docs: List[Document], cfg: IndexConfig,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     now = datetime.now(timezone.utc).isoformat()
     modified = f.modified.isoformat() if f.modified else None
     actions = []
@@ -180,6 +186,8 @@ def _make_actions(index: str, f: SourceFile, docs: List[Document], cfg: IndexCon
                 src["record"] = d.record
             if d.fields:
                 src["fields"] = d.fields
+            if metadata:
+                src["metadata"] = metadata
             actions.append({"_index": index, "_id": stable_id(f.uri, *key, ci), "_source": src})
     return actions
 
@@ -190,6 +198,7 @@ def ingest(
     source: Source,
     *,
     embedder: Optional[Embedder] = None,
+    metadata: MetadataLike = None,
     replace_existing: bool = False,
     progress: bool = True,
     on_event: Optional[EventCallback] = None,
@@ -240,8 +249,9 @@ def ingest(
 
     # 2. read + parse in parallel, 3. chunk, embed and bulk-write ---------------
     def read_and_parse(f: SourceFile):
+        meta = resolve_metadata(f, metadata, sidecars=cfg.metadata_files)
         data = f.read()
-        return len(data), load(f, cfg, data)
+        return len(data), load(f, cfg, data), meta
 
     buffer: List[Dict[str, Any]] = []
     pending_sources: List[str] = []
@@ -287,13 +297,13 @@ def ingest(
                 report.cancelled = True
                 continue
             try:
-                nbytes, docs = fut.result()
+                nbytes, docs, meta = fut.result()
             except (UnsupportedFile, MissingDependency) as e:
                 report.skipped.append((f.uri, str(e)))
             except Exception as e:  # parse/read failure; keep going
                 report.failed.append((f.uri, f"{type(e).__name__}: {e}"[:300]))
             else:
-                actions = _make_actions(cfg.name, f, docs, cfg)
+                actions = _make_actions(cfg.name, f, docs, cfg, meta)
                 report.bytes_read += nbytes
                 report.documents += len(docs)
                 report.chunks += len(actions)

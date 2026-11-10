@@ -19,6 +19,7 @@ Pass these to `cluster.create_index(...)` as keyword arguments, build an `osss.I
 | `text_fields` | list[str] \| None | `None` (all text columns) | CSV/JSON/Parquet columns to search |
 | `title_field` | str \| None | auto | Column used as the result title |
 | `id_field` | str \| None | `None` | Column used as a stable ID |
+| `metadata_files` | bool | `True` | Read `<file>.metadata.json` sidecars ([Bedrock format](../guide/metadata.md)) and attach them to every chunk |
 | `max_file_mb` | float | `100` | Skip larger files |
 | `workers` | int | `8` | Files read in parallel |
 | `batch_size` | int | `256` | Chunks per bulk request and embedding batch |
@@ -56,6 +57,7 @@ Pass these to `cluster.create_index(...)` as keyword arguments, build an `osss.I
 | `page`, `record`, `chunk` | Position within the file |
 | `size`, `modified`, `indexed_at` | File metadata |
 | `fields.*` | CSV/JSON/Parquet columns. Numeric strings are stored as numbers. |
+| `metadata.*` | [Custom metadata](../guide/metadata.md) from sidecar files or `metadata=` |
 | `embedding` | The vector (semantic indexes only) |
 
 Each index also stores the settings it was built with, so `idx.add()` and searches use the same options later.

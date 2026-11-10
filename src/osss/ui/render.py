@@ -241,6 +241,7 @@ def hit_html(h, rank: int) -> str:
         f"<span class='o-score' title='relevance score'>{f'{h.score:.3g}' if h.score else ''}</span></div>"
         f"<div class='o-meta' title='{e(h.source)}'>{SEP.join(meta)}</div>"
         f"<div class='o-snippet'>{h.snippet}</div>"
+        f"{_fields_html(getattr(h, 'metadata', None) or {})}"
         f"{_fields_html(h.fields)}"
         f"<details class='o-more'><summary>Show full text</summary><pre>{e(h.content)}</pre></details>"
         "</div>"

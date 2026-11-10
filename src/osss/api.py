@@ -10,6 +10,7 @@ from ._utils import sanitize_index_name
 from .config import IndexConfig
 from .embeddings import Embedder, get_embedder, register_embedder
 from .indexer import EventCallback, IngestReport, build_index_body, ingest
+from .metadata import MetadataLike
 from .search import SearchResults, run_search
 from .server import LocalServer
 from .sources import ScanSummary, SourceLike, resolve_source
@@ -85,6 +86,7 @@ class Index:
         offset: int = 0,
         filters: Optional[Dict[str, Any]] = None,
         file_type: Optional[Any] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         fuzzy: bool = False,
         operator: str = "or",
         facets: bool = False,
@@ -98,6 +100,8 @@ class Index:
             k: Number of results. ``offset`` pages through them.
             filters: e.g. ``{"file_type": ["pdf"], "folder": "reports", "fields.year": {"gte": 2020}}``.
             file_type: Shortcut for ``filters={"file_type": ...}``.
+            metadata: Filter on custom metadata, e.g. ``{"department": "hr", "year": {"gte": 2024}}``.
+                Shortcut for ``filters={"metadata.department": ..., ...}``.
             fuzzy: Tolerate typos.
             operator: ``"or"`` (any word) or ``"and"`` (all words).
         """
@@ -106,6 +110,8 @@ class Index:
         filters = dict(filters or {})
         if file_type:
             filters["file_type"] = file_type
+        for key, value in (metadata or {}).items():
+            filters[f"metadata.{key}"] = value
         return run_search(
             self.client, self.name, query, mode=mode, k=k, offset=offset, filters=filters,
             embedder=self.embedder if mode != "keyword" else None, operator=operator,
@@ -122,14 +128,21 @@ class Index:
         return self.client.get(index=self.name, id=doc_id)["_source"]
 
     # ----------------------------------------------------------- write
-    def add(self, source: SourceLike, *, progress: bool = True, on_event: Optional[EventCallback] = None,
-            cancel: Optional[threading.Event] = None, **overrides: Any) -> IngestReport:
-        """Index more files (or re-index changed ones) using this index's settings."""
+    def add(self, source: SourceLike, *, metadata: MetadataLike = None, progress: bool = True,
+            on_event: Optional[EventCallback] = None, cancel: Optional[threading.Event] = None,
+            **overrides: Any) -> IngestReport:
+        """Index more files (or re-index changed ones) using this index's settings.
+
+        ``metadata`` is attached to every chunk of these files: a dict, or a
+        function ``(SourceFile) -> dict``. ``.metadata.json`` sidecar files are
+        read as well and take precedence.
+        """
         cfg = self.config or IndexConfig(name=self.name)
         if overrides:
             cfg = cfg.replace(**overrides)
         report = ingest(
-            self.client, cfg, resolve_source(source), embedder=self.embedder, replace_existing=True,
+            self.client, cfg, resolve_source(source), embedder=self.embedder, metadata=metadata,
+            replace_existing=True,
             progress=progress, on_event=on_event, cancel=cancel,
         )
         self.last_report = report
@@ -278,6 +291,7 @@ class Cluster:
         config: Optional[IndexConfig] = None,
         recreate: bool = False,
         embedder: Optional[Embedder] = None,
+        metadata: MetadataLike = None,
         progress: bool = True,
         on_event: Optional[EventCallback] = None,
         cancel: Optional[threading.Event] = None,
@@ -288,9 +302,16 @@ class Cluster:
         ``options`` are :class:`~osss.config.IndexConfig` fields, e.g.
         ``chunk_size=800, include=["*.pdf"], semantic=True, analyzer="english"``.
 
+        ``metadata`` is attached to every chunk and can be filtered on later: a
+        dict for all files, or a function ``(SourceFile) -> dict`` per file.
+        Like Amazon Bedrock Knowledge Bases, a ``<file>.metadata.json`` sidecar
+        next to a file is also read (and wins on conflicting keys).
+
         Example::
 
-            idx = cluster.create_index("reports", "s3://my-bucket/reports/", include=["*.pdf"])
+            idx = cluster.create_index("reports", "s3://my-bucket/reports/", include=["*.pdf"],
+                                       metadata={"team": "finance"})
+            idx.search("revenue", metadata={"team": "finance"})
         """
         if name is None:
             if source is None:
@@ -328,7 +349,7 @@ class Cluster:
                 register_embedder(embedder, "custom")
         if source is not None:
             idx.last_report = ingest(
-                self.client, cfg, resolve_source(source), embedder=embedder,
+                self.client, cfg, resolve_source(source), embedder=embedder, metadata=metadata,
                 progress=progress, on_event=on_event, cancel=cancel,
             )
         else:

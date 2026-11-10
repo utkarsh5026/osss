@@ -82,6 +82,23 @@ cluster.create_index("handbook", "s3://bucket/handbook/", recreate=True)
 !!! note "Deleted files"
     `add` doesn't notice files that were *removed* from the source. Rebuild with `recreate=True` to drop them.
 
+## Custom metadata
+
+Tag files with your own attributes (department, year, tags…) and filter on them when you search. Either put a Bedrock-style sidecar next to a file:
+
+```json title="leave-policy.pdf.metadata.json"
+{"metadataAttributes": {"department": "hr", "year": 2024}}
+```
+
+or pass `metadata=` (a dict, or a function of each file):
+
+```python
+cluster.create_index("handbook", "s3://bucket/handbook/", metadata=lambda f: {"team": f.folder})
+idx.search("parental leave", metadata={"department": "hr"})
+```
+
+Every chunk of the file gets the metadata. The [Metadata & filtering guide](metadata.md) covers it step by step: the sidecar format, generating sidecars in bulk, filters, updates and migrating from Bedrock.
+
 ## Performance
 
 | Option | Default | |

@@ -90,3 +90,38 @@ def test_semantic_and_hybrid(cluster, corpus, name):
     assert idx.semantic
     assert idx.search("refund within 30 days", mode="semantic", k=1)[0].path == "policies/refunds.md"
     assert len(idx.search("refund", mode="hybrid", k=3)) == 3
+
+
+def test_metadata_sidecars_and_filters(cluster, corpus, name):
+    (corpus / "policies" / "refunds.md.metadata.json").write_text(json.dumps({"metadataAttributes": {
+        "department": "finance",
+        "year": {"value": {"type": "NUMBER", "numberValue": 2024}},
+        "tags": ["customers", "money"],
+        "public": True,
+    }}))
+    (corpus / "vacation.txt.metadata.json").write_text('{"metadataAttributes": {"department": "hr", "year": 2022}}')
+    idx = cluster.create_index(name, corpus, metadata=lambda f: {"top": f.folder or "root"}, progress=False)
+    assert idx.last_report.files_indexed == 4  # sidecars aren't documents
+
+    [hit] = idx.search("refund", metadata={"department": "finance"})
+    assert hit.metadata == {"department": "finance", "year": 2024, "tags": ["customers", "money"],
+                            "public": True, "top": "policies"}
+    assert [h.path for h in idx.search("", metadata={"year": {"gte": 2023}})] == ["policies/refunds.md"]
+    assert [h.path for h in idx.search("", metadata={"tags": "money", "public": True})] == ["policies/refunds.md"]
+    assert {h.path for h in idx.search("", metadata={"department": ["hr", "finance"]})} == {"policies/refunds.md", "vacation.txt"}
+    assert idx.search("refund", metadata={"department": "hr"}).total == 0
+    assert idx.search("tent", metadata={"top": "root"}).total == 1  # CSV rows get file metadata too
+
+    # editing a sidecar and re-adding the file updates its chunks
+    (corpus / "vacation.txt.metadata.json").write_text('{"metadataAttributes": {"department": "people"}}')
+    idx.add(corpus / "vacation.txt", progress=False)
+    assert idx.search("vacation")[0].metadata == {"department": "people"}
+
+    if cluster.has_knn() or cluster.server is not None:
+        sem = cluster.create_index(name + "-sem", corpus, embedder=toy_embedder(), progress=False)
+        try:
+            for mode in ("semantic", "hybrid"):
+                res = sem.search("days", mode=mode, metadata={"department": "people"})
+                assert [h.path for h in res] == ["vacation.txt"]
+        finally:
+            cluster.delete_index(sem.name)
