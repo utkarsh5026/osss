@@ -41,6 +41,17 @@ Long documents are split into overlapping **chunks** so that search results poin
 
 osss splits at paragraph boundaries first, then lines, then sentences, then words, so chunks rarely cut a sentence in half.
 
+That's the default `fixed` strategy. Set `chunking=` to pick another one:
+
+| `chunking=` | |
+| --- | --- |
+| `"fixed"` *(default)* | Size-limited, overlapping chunks |
+| `"hierarchical"` | Small chunks are matched; search returns the larger **parent** chunk around them |
+| `"semantic"` | Chunk boundaries go where the topic changes (uses an embedding model) |
+| `"none"` | One chunk per file, page or row |
+
+[Chunking strategies](chunking.md) explains each one, its options, and when to use it.
+
 !!! tip "Choosing a chunk size"
     - **Q&A over prose** (handbooks, policies, reports): `500`–`1000`.
     - **Feeding an LLM** (RAG): `800`–`1500`, so each chunk has enough context.

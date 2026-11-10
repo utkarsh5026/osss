@@ -142,7 +142,8 @@ def cmd_index(args) -> None:
     name = args.name or default_index_name(args.source)
     opts = dict(
         chunk_size=args.chunk_size, chunk_overlap=args.overlap, analyzer=args.analyzer,
-        semantic=args.semantic, embedding_model=args.model,
+        semantic=args.semantic, embedding_model=args.model, chunking=args.chunking,
+        parent_chunk_size=args.parent_chunk_size, breakpoint_percentile=args.breakpoint_percentile,
     )
     if args.include:
         opts["include"] = args.include
@@ -245,6 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.set_defaults(func=fn)
         return sp
 
+    from .chunking import STRATEGIES
     from .config import ANALYZERS
     from .server import DEFAULT_VERSION
 
@@ -275,6 +277,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--types", help="comma-separated extensions, e.g. pdf,md,csv")
     sp.add_argument("--chunk-size", type=int, default=1000, help="characters per chunk (0 = whole documents)")
     sp.add_argument("--overlap", type=int, default=150)
+    sp.add_argument("--chunking", default="fixed", choices=list(STRATEGIES),
+                    help="fixed (default) | hierarchical: search small chunks, return their parent | "
+                         "semantic: split where the topic changes (uses --model) | none: whole documents")
+    sp.add_argument("--parent-chunk-size", type=int, default=4000,
+                    help="hierarchical: characters per parent chunk (--chunk-size is the child size)")
+    sp.add_argument("--breakpoint-percentile", type=float, default=95.0,
+                    help="semantic: split where sentence distance is above this percentile (lower = smaller chunks)")
     sp.add_argument("--analyzer", default="standard", choices=sorted(ANALYZERS))
     sp.add_argument("--semantic", action="store_true", help="also compute embeddings")
     sp.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2", help="embedding model id")

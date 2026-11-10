@@ -100,7 +100,8 @@ for hit in res:
     hit.record       # CSV/JSON row number (or None)
     hit.score        # relevance score
     hit.snippet      # HTML with <mark> around matches
-    hit.content      # the full chunk text
+    hit.content      # the full chunk text (the parent chunk for hierarchical indexes)
+    hit.matched      # hierarchical indexes: the smaller chunk that matched
     hit.fields       # original columns for CSV/JSON/Parquet
     hit.metadata     # your custom metadata, e.g. {"department": "hr", "year": 2024}
 

@@ -19,6 +19,7 @@ import ipywidgets as W
 
 from .._progress import Progress
 from .._utils import human_count, human_duration, module_available, pip_install, sanitize_index_name
+from ..chunking import STRATEGIES
 from ..config import ANALYZERS, DEFAULT_EXCLUDE, EMBEDDING_MODELS, IndexConfig
 from ..loaders import is_supported
 from . import render as R
@@ -400,6 +401,11 @@ class App(W.VBox):
         self.c_model_row = W.VBox([_field("Embedding model", self.c_model), _row(self.c_model_note, self.c_install)])
         self.c_search.observe(lambda c: self._on_semantic(), names="value")
         self.c_model.observe(lambda c: self._on_semantic(), names="value")
+        self.c_chunking = W.Dropdown(options=[(v, k) for k, v in STRATEGIES.items()], value="fixed", layout=W.Layout(width="420px"))
+        self.c_chunking.observe(lambda c: (self._on_chunk(), self._on_semantic()), names="value")
+        self.c_parent = W.IntSlider(value=4000, min=500, max=16000, step=500, continuous_update=False, layout=W.Layout(width="360px"))
+        self.c_parent.observe(lambda c: self._on_chunk(), names="value")
+        self.c_parent_row = _field("Parent size", self.c_parent, hint="characters of context returned per match")
         self.c_chunk = W.IntSlider(value=1000, min=0, max=4000, step=100, continuous_update=False, readout=True, layout=W.Layout(width="360px"))
         self.c_overlap = W.IntSlider(value=150, min=0, max=1000, step=25, continuous_update=False, layout=W.Layout(width="360px"))
         self.c_chunk_hint = W.HTML()
@@ -439,8 +445,10 @@ class App(W.VBox):
             _field("File types", self.c_types_box),
             _field("Search type", self.c_search),
             self.c_model_row,
+            _field("Chunking", self.c_chunking),
             _field("Chunk size", self.c_chunk, hint=""),
             _row(_label(""), self.c_chunk_hint),
+            self.c_parent_row,
             _field("Overlap", self.c_overlap, hint="characters shared by neighbouring chunks"),
             _field("Analyzer", self.c_analyzer),
             self.c_recreate,
@@ -501,19 +509,33 @@ class App(W.VBox):
             self._setting_name = False
 
     def _on_chunk(self) -> None:
+        strategy = self.c_chunking.value
         v = self.c_chunk.value
-        self.c_overlap.disabled = v == 0
-        if v == 0:
+        if strategy in ("hierarchical", "semantic") and v == 0:
+            self.c_chunk.value = v = 1000 if strategy == "semantic" else 500
+        self.c_chunk.disabled = strategy == "none"
+        self.c_overlap.disabled = v == 0 or strategy in ("semantic", "none")
+        self.c_parent_row.layout.display = "" if strategy == "hierarchical" else "none"
+        if strategy == "hierarchical" and self.c_parent.value <= v:
+            self.c_parent.value = min(self.c_parent.max, max(4000, v * 4))
+        if strategy == "none" or v == 0:
             hint = "Each file / page / record is indexed whole."
+        elif strategy == "hierarchical":
+            hint = (f"Searches child chunks of ≈ {max(1, v // 5):,} words and returns the parent chunk "
+                    f"(≈ {max(1, self.c_parent.value // 5):,} words) each one came from.")
+        elif strategy == "semantic":
+            hint = (f"Splits where the topic changes, at most ≈ {max(1, v // 5):,} words per chunk. "
+                    "Every sentence is embedded once while indexing.")
         else:
             hint = f"≈ {max(1, v // 5):,} words per chunk — smaller chunks give more precise hits, larger ones more context."
         self.c_chunk_hint.value = R.wrap(f"<span class='o-muted' style='font-size:11.5px'>{hint}</span>", standalone=False)
 
     def _on_semantic(self) -> None:
         sem = self.c_search.value == "semantic"
-        self.c_model_row.layout.display = "" if sem else "none"
+        needs_model = sem or self.c_chunking.value == "semantic"
+        self.c_model_row.layout.display = "" if needs_model else "none"
         provider = EMBEDDING_MODELS.get(self.c_model.value, ("sentence-transformers",))[0]
-        need_install = sem and provider == "sentence-transformers" and not module_available("sentence_transformers")
+        need_install = needs_model and provider == "sentence-transformers" and not module_available("sentence_transformers")
         self.c_install.layout.display = "" if need_install else "none"
         notes = []
         if need_install:
@@ -615,8 +637,10 @@ class App(W.VBox):
             include=_csv(self.c_include.value),
             exclude=_csv(self.c_exclude.value),
             file_types=file_types,
+            chunking=self.c_chunking.value,
             chunk_size=self.c_chunk.value,
             chunk_overlap=overlap,
+            parent_chunk_size=self.c_parent.value,
             analyzer=self.c_analyzer.value,
             semantic=self.c_search.value == "semantic",
             embedding_model=self.c_model.value,
@@ -665,8 +689,8 @@ class App(W.VBox):
                 self.c_log.value = R.wrap(f"<div class='o-log'>{e(chr(10).join(log_lines))}</div>", standalone=False)
 
         def work():
-            if cfg.semantic:
-                progress.start(None, "Preparing semantic search")
+            if cfg.semantic or cfg.chunking == "semantic":
+                progress.start(None, "Preparing semantic search" if cfg.semantic else "Preparing semantic chunking")
                 progress.note(f"Loading embedding model {cfg.embedding_model}…")
             idx = self.cluster.create_index(
                 cfg.name, path, config=cfg, recreate=self.c_recreate.value,

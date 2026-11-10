@@ -81,6 +81,7 @@ idx = cluster.index("docs")
 | `path`, `source`, `file_name`, `file_type` | Where it came from |
 | `page`, `record`, `chunk` | PDF page, CSV/JSON row, chunk number |
 | `score`, `fields`, `metadata`, `id` | `fields` holds CSV/JSON/Parquet columns; `metadata` your custom metadata |
+| `parent_id`, `matched` | [Hierarchical](../guide/chunking.md#hierarchical) indexes: `content` is the parent chunk, `matched` the child chunk that matched |
 
 ## `IngestReport`
 

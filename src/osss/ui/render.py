@@ -144,7 +144,16 @@ def index_card(s: Dict[str, Any], standalone: bool = True) -> str:
     if s.get("analyzer"):
         rows.append(("Analyzer", e(s["analyzer"])))
     if s.get("chunk_size") is not None:
-        rows.append(("Chunking", e(f"{s['chunk_size']} characters" if s["chunk_size"] else "whole documents")))
+        strategy = s.get("chunking") or "fixed"
+        if strategy == "none" or not s["chunk_size"]:
+            text = "whole documents"
+        elif strategy == "hierarchical":
+            text = f"hierarchical · {s['chunk_size']}-character chunks in {s.get('parent_chunk_size')}-character parents"
+        elif strategy == "semantic":
+            text = f"semantic · up to {s['chunk_size']} characters"
+        else:
+            text = f"{s['chunk_size']} characters"
+        rows.append(("Chunking", e(text)))
     if s.get("created_at"):
         rows.append(("Created", e(str(s["created_at"])[:16].replace("T", " "))))
     if s.get("last_indexed"):
